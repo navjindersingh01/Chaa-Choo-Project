@@ -19,8 +19,8 @@ timeout = int(os.getenv('WORKER_TIMEOUT', 60))
 keepalive = 2
 
 # Logging
-accesslog = '/var/log/gunicorn/access.log'
-errorlog = '/var/log/gunicorn/error.log'
+accesslog = '-'
+errorlog = '-'
 loglevel = 'info'
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
 
