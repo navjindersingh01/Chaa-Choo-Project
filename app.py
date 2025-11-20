@@ -680,42 +680,8 @@ def api_manager_orders_export():
         return jsonify({'error': 'exception'}), 500
 
 
-@app.route('/api/manager/orders/clear', methods=['POST'])
-@login_required
-@role_required('manager')
-def api_manager_orders_clear():
-    """Clear all orders and order_items from database. Requires confirmation token."""
-    try:
-        payload = request.get_json() or {}
-        confirm = payload.get('confirm')
-        
-        # Simple confirmation: require confirm='YES_DELETE_ALL'
-        if confirm != 'YES_DELETE_ALL':
-            return jsonify({'error': 'not_confirmed'}), 400
-        
-        db = get_db_connection()
-        cur = db.cursor()
-        
-        # Delete order items first (FK constraint)
-        cur.execute("DELETE FROM order_items")
-        # Delete orders
-        cur.execute("DELETE FROM orders")
-        # Reset auto-increment if needed (optional, DB-specific)
-        try:
-            cur.execute("ALTER TABLE orders AUTO_INCREMENT = 1")
-            cur.execute("ALTER TABLE order_items AUTO_INCREMENT = 1")
-        except Exception:
-            pass  # Some DBs don't support this
-        
-        db.commit()
-        cur.close()
-        db.close()
-        
-        logging.warning(f"Manager {session.get('username')} cleared all orders from database")
-        return jsonify({'status': 'cleared'}), 200
-    except Exception:
-        logging.error('Failed to clear orders:\n' + traceback.format_exc())
-        return jsonify({'error': 'exception'}), 500
+# NOTE: /api/manager/orders/clear endpoint removed from UI and backend for safety.
+# If needed in the future, consider re-adding a restricted admin-only endpoint.
 
 
 # ----- MANAGER: Menu management API (reads/writes data/menu.json and saves images) -----

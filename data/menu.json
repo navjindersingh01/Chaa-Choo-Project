@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-11-20T05:58:52.752557Z",
+  "generated_at": "2025-11-20T08:23:54.804798Z",
   "currency": "INR",
   "categories": [
     {
@@ -312,6 +312,21 @@
           "description": "Rich brownie topped with mawa and nuts.",
           "price": 149.0,
           "image": "mawa_brownie.svg",
+          "tags": [],
+          "veg": true
+        }
+      ]
+    },
+    {
+      "id": "uncategorized",
+      "label": "uncategorized",
+      "items": [
+        {
+          "id": 1092,
+          "name": "",
+          "description": "",
+          "price": 0.0,
+          "image": "",
           "tags": [],
           "veg": true
         }

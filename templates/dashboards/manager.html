@@ -181,7 +181,6 @@
             <button id="manage-users-btn" class="btn-secondary">✏️ Manage Users</button>
             <button id="manage-menu-btn" class="btn-primary" style="background:#ff8c00">🧾 Manage Menu</button>
             <button id="export-orders-btn" class="btn-secondary" style="background:#10b981">📊 Export Orders</button>
-            <button id="clear-orders-btn" class="btn-secondary" style="background:#ef4444">🗑️ Clear All Orders</button>
         </div>
 
     <!-- Manage Users modal -->
@@ -273,6 +272,8 @@
                     <button id="menu-modal-close" class="btn-secondary" style="background:#6b7280">Close</button>
                 </div>
             </div>
+
+                
 
             <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
                 <div style="flex:1;min-width:260px">
@@ -561,16 +562,33 @@
     </script>
     <script>
     // Manage Users modal script
-    const manageUsersBtn = document.getElementById('manage-users-btn')
-    const usersModal = document.getElementById('users-modal')
-    const usersClose = document.getElementById('users-modal-close')
-    const usersListEl = document.getElementById('users-list')
+    (function(){
+        // ensure single binding by replacing node with a clone
+        function bindOnce(id, handler){
+            const el = document.getElementById(id)
+            if(!el) return null
+            const clone = el.cloneNode(true)
+            el.parentNode.replaceChild(clone, el)
+            clone.addEventListener('click', handler)
+            return clone
+        }
 
-    function openUsersModal(){ usersModal.style.display = 'flex'; fetchUsers() }
-    function closeUsersModal(){ usersModal.style.display = 'none' }
+        const usersModal = document.getElementById('users-modal')
+        const usersClose = document.getElementById('users-modal-close')
+        const usersListEl = document.getElementById('users-list')
 
-    manageUsersBtn && manageUsersBtn.addEventListener('click', openUsersModal)
-    usersClose && usersClose.addEventListener('click', closeUsersModal)
+        function openUsersModal(){ usersModal.style.display = 'flex'; fetchUsers(); console.debug('openUsersModal') }
+        function closeUsersModal(){ usersModal.style.display = 'none'; console.debug('closeUsersModal') }
+
+        // bind the manage users button once
+        bindOnce('manage-users-btn', openUsersModal)
+        // bind close button (users modal)
+        if(usersClose) {
+            const closeHandler = function(e){ e.preventDefault(); closeUsersModal() }
+            usersClose.parentNode.replaceChild(usersClose.cloneNode(true), usersClose)
+            document.getElementById('users-modal-close').addEventListener('click', closeHandler)
+        }
+    })()
 
     async function fetchUsers(){
         usersListEl.innerHTML = 'Loading...'
@@ -607,52 +625,46 @@
     }
     </script>
     <script>
-    // Export and Clear orders scripts
-    const exportBtn = document.getElementById('export-orders-btn')
-    const clearBtn = document.getElementById('clear-orders-btn')
-
-    exportBtn && exportBtn.addEventListener('click', async ()=>{
-        try{
-            const fmt = prompt('Export format: csv or json?', 'csv')
-            if(!fmt) return
-            if(!['csv','json'].includes(fmt.toLowerCase())) { alert('Invalid format'); return }
-            const res = await fetch('/api/manager/orders/export?format='+fmt.toLowerCase())
-            if(!res.ok) throw new Error('Export failed')
-            const blob = await res.blob()
-            const url = window.URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g,'') || 'orders.'+fmt
-            document.body.appendChild(a)
-            a.click()
-            window.URL.revokeObjectURL(url)
-            a.remove()
-            alert('Export started')
-        }catch(e){
-            console.error(e)
-            alert('Export failed: '+e.message)
+    // Export and Clear orders scripts (bound safely)
+    (function(){
+        function bindClickOnce(id, handler){
+            const el = document.getElementById(id)
+            if(!el) return null
+            const clone = el.cloneNode(true)
+            el.parentNode.replaceChild(clone, el)
+            clone.addEventListener('click', handler)
+            return clone
         }
-    })
 
-    clearBtn && clearBtn.addEventListener('click', async ()=>{
-        if(!confirm('⚠️ This will DELETE ALL orders from the database. Are you sure?')) return
-        const confirm2 = prompt('Type YES_DELETE_ALL to confirm:')
-        if(confirm2 !== 'YES_DELETE_ALL') { alert('Cancelled'); return }
-        try{
-            const res = await fetch('/api/manager/orders/clear', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ confirm: 'YES_DELETE_ALL' })
-            })
-            const data = await res.json()
-            if(!res.ok) { alert('Clear failed: '+(data.error||'unknown')); return }
-            alert('✅ All orders cleared from database')
-            loadRecentOrders()
-        }catch(e){
-            console.error(e)
-            alert('Clear failed: '+e.message)
-        }
-    })
+        bindClickOnce('export-orders-btn', async ()=>{
+            console.debug('export-orders-btn clicked')
+            try{
+                const fmt = prompt('Export format: csv or json?', 'csv')
+                if(!fmt) return
+                if(!['csv','json'].includes(fmt.toLowerCase())) { alert('Invalid format'); return }
+                const res = await fetch('/api/manager/orders/export?format='+fmt.toLowerCase())
+                if(!res.ok) throw new Error('Export failed')
+                const blob = await res.blob()
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g,'') || 'orders.'+fmt
+                document.body.appendChild(a)
+                a.click()
+                window.URL.revokeObjectURL(url)
+                a.remove()
+                alert('Export started')
+            }catch(e){
+                console.error(e)
+                alert('Export failed: '+e.message)
+            }
+        })
+
+        // clear-orders-btn removed for safety in production
+    })()
+
+    // Clear orders modal and handlers removed from UI (server endpoint remains for admin operations)
+    </script>
     <script>
     // Menu manager scripts
     const manageMenuBtn = document.getElementById('manage-menu-btn')
@@ -668,7 +680,15 @@
     function openModal(){ menuModal.style.display = 'flex'; fetchMenu() }
     function closeModal(){ menuModal.style.display = 'none'; clearForm() }
 
-    manageMenuBtn && manageMenuBtn.addEventListener('click', openModal)
+    // ensure menu button is bound once
+    (function(){
+        const mm = document.getElementById('manage-menu-btn')
+        if(mm){
+            const clone = mm.cloneNode(true)
+            mm.parentNode.replaceChild(clone, mm)
+            clone.addEventListener('click', ()=>{ console.debug('manage-menu-btn clicked'); openModal() })
+        }
+    })()
     menuClose && menuClose.addEventListener('click', closeModal)
 
     async function fetchMenu(){
