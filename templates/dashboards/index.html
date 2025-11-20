@@ -1,0 +1,3 @@
+<!-- templates/index.html -->
+<!doctype html><html><head><meta charset="utf-8"><title>Home</title></head>
+<body><h1>Menu preview</h1>{% if items %}<ul>{% for it in items %}<li>{{ it.name }} — {{ it.category }} — ₹{{ it.price }}</li>{% endfor %}</ul>{% else %}<p>No items</p>{% endif %}</body></html>

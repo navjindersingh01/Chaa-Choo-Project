@@ -1,0 +1,68 @@
+{
+  "spec_version": 1,
+  "dashboards": {
+    "chef": {
+      "kpis": [
+        {"id":"food_waste_kg_day","label":"Food Waste (kg/day)","formula":"daily_waste_kg = sum(waste_items.weight_kg)","visualization":"numeric+sparkline"}
+      ],
+      "endpoints": {
+        "waste":"/api/chef/waste?limit=10"
+      },
+      "refresh": {"kpis":"60s","large_chart":"5m","table":"manual"},
+      "permissions": ["view_kpis","mark_prepared"],
+      "actionable": {
+        "mark_order_prepared": {
+          "method":"PATCH","url":"/api/orders/{id}/status","api_sample_payload":{"status":"prepared","prepared_by":"alice","timestamp":"2025-11-18T12:00:00Z"},
+          "sample_response":[{"order_id":"order-123","status":"prepared"}]
+        }
+      },
+      "sample_response": [{"id":"w1","kitchen_area":"Grill","weight_kg":4.2,"recorded_at":"2025-11-17T08:15:00Z"}]
+    },
+    "reception": {
+      "kpis": [
+        {"id":"today_checkins","label":"Today: Check-ins","formula":"count(checkin_date == today)","visualization":"numeric"},
+        {"id":"avg_wait_min","label":"Average Wait Time (min)","formula":"avg(checkin_time - arrival_time)","visualization":"numeric+bar"}
+      ],
+      "endpoints": {"reservations":"/api/reception/reservations?date=YYYY-MM-DD"},
+      "refresh": {"kpis":"30s","arrivals_bar":"1m","table":"15s"},
+      "permissions": ["view_reservations","confirm_checkin"],
+      "actionable": {
+        "confirm_reservation": {"method":"POST","url":"/api/reservations/{id}/confirm","api_sample_payload":{"confirmed_by":"bob","confirmation_time":"2025-11-18T09:15:00Z"},"sample_response":[{"id":"r1","status":"confirmed"}]}
+      },
+      "sample_response": [{"id":"r1","guest_name":"John Doe","arrival_time":"2025-11-18T09:05:00Z","checkin_time":"2025-11-18T09:12:00Z","checkin_date":"2025-11-18"}]
+    },
+    "inventory": {
+      "kpis": [
+        {"id":"days_of_stock_top5","label":"Days of Stock (top-5)","formula":"days = current_qty / avg_daily_usage","visualization":"table+badges"}
+      ],
+      "endpoints": {"skus":"/api/inventory/skus?top=5"},
+      "refresh": {"stock_badges":"5m","reorder_alerts":"realtime","table":"5m"},
+      "permissions": ["view_inventory","approve_po"],
+      "actionable": {
+        "approve_po": {"method":"POST","url":"/api/purchase-orders/{id}/approve","api_sample_payload":{"approved_by":"charlie","expected_delivery_date":"2025-11-25"},"sample_response":[{"po_id":"po-42","status":"approved"}]}
+      },
+      "sample_response": [{"sku":"SKU-001","name":"Tomatoes","current_qty":120,"avg_daily_usage":30}]
+    },
+    "manager_ops": {
+      "kpis": [
+        {"id":"staff_util_pct","label":"Staff Utilization (%)","formula":"worked_hours / scheduled_hours * 100","visualization":"donut+trend"}
+      ],
+      "endpoints": {"staff":"/api/ops/staff?range=7d"},
+      "refresh": {"staff_data":"1m","pnl":"15m"},
+      "permissions": ["view_ops","assign_shift"],
+      "actionable": {"assign_shift":{"method":"POST","url":"/api/shifts","api_sample_payload":{"staff_id":"s2","start":"2025-11-18T08:00:00Z","end":"2025-11-18T12:00:00Z","assigned_by":"diana"},"sample_response":[{"shift_id":"sh-1","status":"assigned"}]}},
+      "sample_response": [{"id":"s1","name":"Alice","worked_hours":38,"scheduled_hours":40}]
+    },
+    "manager_finance": {
+      "kpis": [
+        {"id":"gross_margin_pct","label":"Gross Margin (%)","formula":"(revenue - COGS) / revenue * 100","visualization":"numeric"},
+        {"id":"cash_runway_days","label":"Cash Runway (days)","formula":"cash_balance / avg_daily_net_burn","visualization":"numeric"}
+      ],
+      "endpoints": {"finance":"/api/finance/summary?period=YYYY-MM"},
+      "refresh": {"financial_numbers":"15m","cash_runway":"realtime"},
+      "permissions": ["view_finance","approve_close"],
+      "actionable": {"approve_monthly_close":{"method":"POST","url":"/api/finance/close","api_sample_payload":{"month":"2025-11","approved_by":"eve"},"sample_response":[{"month":"2025-11","status":"closed"}]}},
+      "sample_response": [{"period":"2025-11","revenue":50000,"cogs":20000,"cash_balance":120000,"avg_daily_net_burn":2000}]
+    }
+  }
+}

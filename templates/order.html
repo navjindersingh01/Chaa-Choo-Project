@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Place Order - Chaa Choo</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .navbar {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 0;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+        .navbar-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+        }
+        .navbar h1 {
+            color: #fff;
+            font-size: 28px;
+        }
+        .navbar a {
+            color: #fff;
+            text-decoration: none;
+            margin-left: 20px;
+            padding: 10px 15px;
+            border-radius: 5px;
+            transition: 0.3s;
+        }
+        .navbar a:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+        }
+        .menu-section {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        .cart-section {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+        }
+        .menu-title {
+            font-size: 28px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        .items-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        .item-card {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+        .item-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            border-color: #667eea;
+        }
+        .item-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        .item-name {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        .item-category {
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+        .item-price {
+            font-size: 20px;
+            color: #667eea;
+            font-weight: bold;
+        }
+        .cart-title {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        .cart-items {
+            margin-bottom: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .cart-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+        .cart-item-name {
+            font-weight: 600;
+            color: #333;
+        }
+        .cart-item-qty {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .qty-btn {
+            padding: 4px 8px;
+            border: none;
+            background: #667eea;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .qty-btn:hover {
+            background: #5568d3;
+        }
+        .remove-btn {
+            padding: 4px 8px;
+            border: none;
+            background: #ef4444;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .remove-btn:hover {
+            background: #dc2626;
+        }
+        .cart-total {
+            border-top: 2px solid #eee;
+            padding-top: 15px;
+            margin-bottom: 20px;
+        }
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .checkout-btn {
+            width: 100%;
+            padding: 15px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .checkout-btn:hover {
+            background: #059669;
+        }
+        .checkout-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .back-btn {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .back-btn:hover {
+            text-decoration: underline;
+        }
+        .customer-info {
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 12px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            background: #10b981;
+            color: white;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            display: none;
+            z-index: 1000;
+            animation: slideIn 0.3s ease-out;
+        }
+        .toast.show {
+            display: block;
+        }
+        .toast.error {
+            background: #ef4444;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+            .cart-section {
+                position: static;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <div class="navbar-content">
+            <h1>☕ Chaa Choo</h1>
+            <div>
+                <a href="{{ url_for('index') }}">← Back to Menu</a>
+                <a href="{{ url_for('login') }}">Login</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Menu Section -->
+        <div class="menu-section">
+            <a href="{{ url_for('index') }}" class="back-btn">← Back to Menu</a>
+            <h2 class="menu-title">📋 Place Your Order</h2>
+            <div class="items-grid" id="items-grid">
+                <div style="grid-column: 1/-1; text-align: center; color: #999;">Loading menu...</div>
+            </div>
+        </div>
+
+        <!-- Cart Section -->
+        <div class="cart-section">
+            <h3 class="cart-title">🛒 Your Cart</h3>
+            
+            <div class="customer-info">
+                <div class="form-group">
+                    <label for="customer-name">Your Name</label>
+                    <input type="text" id="customer-name" placeholder="Enter your name">
+                </div>
+                <div class="form-group">
+                    <label for="customer-phone">Phone (Optional)</label>
+                    <input type="tel" id="customer-phone" placeholder="Your phone number">
+                </div>
+                <div class="form-group">
+                    <label for="order-type">Order Type</label>
+                    <select id="order-type">
+                        <option value="dine-in">Dine In</option>
+                        <option value="takeaway">Takeaway</option>
+                        <option value="delivery">Delivery</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="cart-items" id="cart-items">
+                <div style="text-align: center; color: #999; padding: 20px;">Cart is empty</div>
+            </div>
+
+            <div class="cart-total">
+                <div class="total-row">
+                    <span>Total:</span>
+                    <span id="total-amount">₹0.00</span>
+                </div>
+            </div>
+
+            <button class="checkout-btn" id="checkout-btn" disabled onclick="placeOrder()">
+                Place Order
+            </button>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const cart = {};
+        let items = [];
+
+        // Load menu items
+        async function loadMenu() {
+            try {
+                const response = await fetch('{{ url_for("api_public_items") }}');
+                if (!response.ok) throw new Error('Failed to load items');
+                items = await response.json();
+                renderMenu();
+            } catch (error) {
+                showToast('Failed to load menu: ' + error.message, 'error');
+            }
+        }
+
+        function renderMenu() {
+            const grid = document.getElementById('items-grid');
+            if (items.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #999;">No items available</div>';
+                return;
+            }
+
+            grid.innerHTML = items.map(item => {
+                    const icon = {
+                        'Coffee': '☕',
+                        'Tea': '🍵',
+                        'Pastry': '🥐',
+                        'Sandwich': '🥪'
+                    }[item.category] || '🍰';
+
+                    const imgHtml = item.image ? `<div style="height:90px; overflow:hidden; margin-bottom:8px;"><img src="/static/images/menu/${item.image}" alt="${item.name}" style="width:100%;height:90px;object-fit:cover;border-radius:6px;"/></div>` : `<div class="item-icon">${icon}</div>`;
+                    const desc = item.description ? `<div style="color:#666;font-size:12px;margin-bottom:6px;">${item.description}</div>` : '';
+
+                    return `
+                        <div class="item-card" onclick="addToCart(${item.id}, '${item.name.replace(/'/g,"\\'")}', ${item.price})">
+                            ${imgHtml}
+                            <div class="item-name">${item.name}</div>
+                            <div class="item-category">${item.category}</div>
+                            ${desc}
+                            <div class="item-price">₹${parseFloat(item.price).toFixed(2)}</div>
+                        </div>
+                    `;
+            }).join('');
+        }
+
+        function addToCart(itemId, itemName, itemPrice) {
+            if (!cart[itemId]) {
+                cart[itemId] = { name: itemName, price: itemPrice, qty: 0 };
+            }
+            cart[itemId].qty++;
+            updateCart();
+            showToast(`Added ${itemName} to cart`, 'success');
+        }
+
+        function removeFromCart(itemId) {
+            delete cart[itemId];
+            updateCart();
+        }
+
+        function updateQty(itemId, delta) {
+            if (cart[itemId]) {
+                cart[itemId].qty += delta;
+                if (cart[itemId].qty <= 0) {
+                    removeFromCart(itemId);
+                } else {
+                    updateCart();
+                }
+            }
+        }
+
+        function updateCart() {
+            const cartItems = document.getElementById('cart-items');
+            const itemIds = Object.keys(cart);
+
+            if (itemIds.length === 0) {
+                cartItems.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">Cart is empty</div>';
+                document.getElementById('checkout-btn').disabled = true;
+                document.getElementById('total-amount').textContent = '₹0.00';
+                return;
+            }
+
+            let total = 0;
+            cartItems.innerHTML = itemIds.map(id => {
+                const item = cart[id];
+                const subtotal = item.price * item.qty;
+                total += subtotal;
+                return `
+                    <div class="cart-item">
+                        <div>
+                            <div class="cart-item-name">${item.name}</div>
+                            <div style="color: #666; font-size: 12px;">₹${parseFloat(item.price).toFixed(2)} each</div>
+                        </div>
+                        <div class="cart-item-qty">
+                            <button class="qty-btn" onclick="updateQty(${id}, -1)">−</button>
+                            <span style="width: 30px; text-align: center; font-weight: 600;">${item.qty}</span>
+                            <button class="qty-btn" onclick="updateQty(${id}, 1)">+</button>
+                            <button class="remove-btn" onclick="removeFromCart(${id})">Remove</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('total-amount').textContent = `₹${total.toFixed(2)}`;
+            document.getElementById('checkout-btn').disabled = false;
+        }
+
+        async function placeOrder() {
+            const customerName = document.getElementById('customer-name').value.trim();
+            const customerPhone = document.getElementById('customer-phone').value.trim();
+            const orderType = document.getElementById('order-type').value;
+
+            if (!customerName) {
+                showToast('Please enter your name', 'error');
+                return;
+            }
+
+            if (Object.keys(cart).length === 0) {
+                showToast('Your cart is empty', 'error');
+                return;
+            }
+
+            const items = Object.entries(cart).map(([itemId, item]) => ({
+                item_id: parseInt(itemId),
+                qty: item.qty
+            }));
+
+            const totalAmount = Object.values(cart).reduce((sum, item) => sum + (item.price * item.qty), 0);
+
+            try {
+                const response = await fetch('/api/public/orders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_name: customerName,
+                        customer_phone: customerPhone,
+                        type: orderType,
+                        items: items,
+                        total_amount: totalAmount,
+                        priority: 'normal'
+                    })
+                });
+
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || 'Order failed');
+                }
+
+                showToast(`✅ Order #${result.order_id} placed successfully!`, 'success');
+                setTimeout(() => {
+                    window.location.href = '{{ url_for("index") }}';
+                }, 2000);
+            } catch (error) {
+                showToast('Error: ' + error.message, 'error');
+            }
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast show ${type === 'error' ? 'error' : ''}`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Load menu on page load
+        loadMenu();
+    </script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+[Unit]
+Description=Chaa Choo Flask Application
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/home/chaa-choo
+Environment="PATH=/home/chaa-choo/venv/bin"
+Environment="FLASK_ENV=production"
+EnvironmentFile=/home/chaa-choo/.env.production
+ExecStart=/home/chaa-choo/venv/bin/gunicorn --config /home/chaa-choo/gunicorn_config.py wsgi:app
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/gunicorn /var/run
+
+[Install]
+WantedBy=multi-user.target

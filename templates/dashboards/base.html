@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Chaa Choo Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <script src="https://cdn.socket.io/4.7.0/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        {% block extra_css %}{% endblock %}
+    </style>
+</head>
+<body>
+    <div class="dashboard-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                <div>
+                    <div class="sidebar-logo-text">Chaa Choo</div>
+                    <div class="sidebar-role">{{ session.role|upper }}</div>
+                </div>
+            </div>
+
+            <nav>
+                <ul class="sidebar-nav">
+                    {% if session.role == 'chief' %}
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='chief') }}" class="sidebar-nav-link active">
+                                <span class="sidebar-nav-icon">👨‍🍳</span> Kitchen Queue
+                            </a>
+                        </li>
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='chief') }}#metrics" class="sidebar-nav-link">
+                                <span class="sidebar-nav-icon">📊</span> Metrics
+                            </a>
+                        </li>
+                    {% elif session.role == 'receptionist' %}
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='receptionist') }}" class="sidebar-nav-link active">
+                                <span class="sidebar-nav-icon">📞</span> New Orders
+                            </a>
+                        </li>
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='receptionist') }}#queue" class="sidebar-nav-link">
+                                <span class="sidebar-nav-icon">⏳</span> Queue
+                            </a>
+                        </li>
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='receptionist') }}#billing" class="sidebar-nav-link">
+                                <span class="sidebar-nav-icon">💰</span> Billing
+                            </a>
+                        </li>
+                    {% elif session.role == 'inventory' %}
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='inventory') }}" class="sidebar-nav-link active">
+                                <span class="sidebar-nav-icon">📦</span> Stock Levels
+                            </a>
+                        </li>
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='inventory') }}#alerts" class="sidebar-nav-link">
+                                <span class="sidebar-nav-icon">⚠️</span> Alerts
+                            </a>
+                        </li>
+                    {% elif session.role == 'manager' %}
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='manager') }}" class="sidebar-nav-link active">
+                                <span class="sidebar-nav-icon">📈</span> Analytics
+                            </a>
+                        </li>
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='manager') }}#users" class="sidebar-nav-link">
+                                <span class="sidebar-nav-icon">👥</span> Staff
+                            </a>
+                        </li>
+                    {% elif session.role == 'stakeholder' %}
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='stakeholder') }}" class="sidebar-nav-link active">
+                                <span class="sidebar-nav-icon">👁️</span> Executive Summary
+                            </a>
+                        </li>
+                        <li class="sidebar-nav-item">
+                            <a href="{{ url_for('dashboard', role='stakeholder') }}#roi" class="sidebar-nav-link">
+                                <span class="sidebar-nav-icon">💹</span> ROI
+                            </a>
+                        </li>
+                    {% endif %}
+
+                    <li class="sidebar-nav-item" style="margin-top: 2rem; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 1rem;">
+                        <a href="{{ url_for('logout') }}" class="sidebar-nav-link">
+                            <span class="sidebar-nav-icon">🚪</span> Logout
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+
+            <div class="sidebar-profile">
+                <div class="profile-item">
+                    <span>👤</span>
+                    <span>{{ session.get('username', 'User') }}</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Bar -->
+            <div class="top-bar">
+                <div>
+                    <h1 style="margin: 0; font-size: 1.5rem; color: var(--color-dark);">
+                        {% block page_title %}Dashboard{% endblock %}
+                    </h1>
+                </div>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div class="live-indicator">
+                        <span class="live-dot"></span>
+                        <span>Live</span>
+                    </div>
+                    <span style="font-size: 0.875rem; color: #6b7280;" id="sync-time">Last sync: now</span>
+                </div>
+            </div>
+
+            <!-- Page Content -->
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="{{ url_for('static', filename='js/dashboard-client.js') }}"></script>
+    <script>
+        // Update sync time
+        function updateSyncTime() {
+            const now = new Date();
+            document.getElementById('sync-time').textContent = 
+                `Last sync: ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+        }
+        updateSyncTime();
+        setInterval(updateSyncTime, 1000);
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

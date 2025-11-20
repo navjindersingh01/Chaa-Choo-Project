@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: chaa-choo-web
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - DB_HOST=mysql
+      - DB_USER=cafe_user
+      - DB_PASSWORD=your_secure_password
+      - DB_NAME=cafe_ca3
+      - SECRET_KEY=your_very_secure_key_here
+    depends_on:
+      - mysql
+    volumes:
+      - ./templates:/app/templates
+      - ./static:/app/static
+      - ./error.log:/app/error.log
+    restart: always
+    networks:
+      - chaa-choo-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: chaa-choo-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: cafe_ca3
+      MYSQL_USER: cafe_user
+      MYSQL_PASSWORD: your_secure_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: always
+    networks:
+      - chaa-choo-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    image: nginx:alpine
+    container_name: chaa-choo-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./static:/app/static
+      - /etc/letsencrypt:/etc/letsencrypt
+      - /var/www/certbot:/var/www/certbot
+    depends_on:
+      - web
+    restart: always
+    networks:
+      - chaa-choo-network
+
+networks:
+  chaa-choo-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+    driver: local

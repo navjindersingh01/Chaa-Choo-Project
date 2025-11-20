@@ -1,0 +1,8 @@
+Flask>=3.0.0
+mysql-connector-python>=8.0.33
+Werkzeug>=3.0.0
+flask-socketio>=5.3.0
+python-socketio>=5.9.0
+python-engineio>=4.7.0
+python-dotenv>=1.0.0
+gunicorn>=21.0.0

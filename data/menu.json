@@ -1,0 +1,321 @@
+{
+  "generated_at": "2025-11-20T05:58:52.752557Z",
+  "currency": "INR",
+  "categories": [
+    {
+      "id": "chai",
+      "label": "Chai",
+      "items": [
+        {
+          "id": 1001,
+          "name": "Masala Chai (Kulhad)",
+          "description": "Aromatic masala tea served in a clay kulhad.",
+          "price": 55.0,
+          "image": "masala_chai_kulhad.svg",
+          "tags": [
+            "popular"
+          ],
+          "veg": true
+        },
+        {
+          "id": 1002,
+          "name": "Ginger Chai",
+          "description": "Fresh ginger-infused tea, warming and bright.",
+          "price": 50.0,
+          "image": "20251120055423_ginger_chai.jpg",
+          "tags": [],
+          "veg": true
+        },
+        {
+          "id": 1003,
+          "name": "Elaichi (Cardamom) Chai",
+          "description": "Fragrant cardamom chai with creamy finish.",
+          "price": 55.0,
+          "image": "elaichi_chai.svg",
+          "tags": [],
+          "veg": true
+        },
+        {
+          "id": 1004,
+          "name": "Tandoori Chai",
+          "description": "Smoky tandoor-fired tea, served hot in a clay cup.",
+          "price": 75.0,
+          "image": "tandoori_chai.svg",
+          "tags": [
+            "chef special"
+          ],
+          "veg": true
+        }
+      ]
+    },
+    {
+      "id": "coffee",
+      "label": "Coffee",
+      "items": [
+        {
+          "id": 1010,
+          "name": "Filter Coffee (Hot)",
+          "description": "South-style filter coffee, strong and aromatic.",
+          "price": 70.0,
+          "image": "filter_coffee_hot.svg",
+          "tags": [],
+          "veg": true
+        },
+        {
+          "id": 1011,
+          "name": "Iced Latte",
+          "description": "Chilled espresso with cold milk and ice.",
+          "price": 120.0,
+          "image": "iced_latte.svg",
+          "tags": [
+            "popular"
+          ],
+          "veg": true
+        }
+      ]
+    },
+    {
+      "id": "coolers_shakes",
+      "label": "Coolers & Shakes",
+      "items": [
+        {
+          "id": 1020,
+          "name": "Kesar Badam Milkshake",
+          "description": "Creamy saffron-almond milkshake, rich and nutty.",
+          "price": 140.0,
+          "image": "kesar_badam_shake.svg",
+          "tags": [
+            "new"
+          ],
+          "veg": true
+        },
+        {
+          "id": 1021,
+          "name": "Mango Lassi",
+          "description": "Classic sweet mango lassi with chilled yogurt.",
+          "price": 110.0,
+          "image": "mango_lassi.svg",
+          "tags": [
+            "popular"
+          ],
+          "veg": true
+        }
+      ]
+    },
+    {
+      "id": "maggie_pasta",
+      "label": "Maggie & Pasta",
+      "items": [
+        {
+          "id": 1030,
+          "name": "Masala Maggie",
+          "description": "Spicy Indian-style Maggie with vegetables.",
+          "price": 95.0,
+          "image": "masala_maggie.svg",
+          "tags": [
+            "spicy",
+            "popular"
+          ],
+          "veg": true
+        },
+        {
+          "id": 1031,
+          "name": "Creamy Paneer Pasta",
+          "description": "Penne in creamy tomato sauce with paneer.",
+          "price": 185.0,
+          "image": "paneer_pasta.svg",
+          "tags": [],
+          "veg": true
+        }
+      ]
+    },
+    {
+      "id": "momos",
+      "label": "Momos",
+      "items": [
+        {
+          "id": 1040,
+          "name": "Steamed Veg Momos",
+          "description": "Soft steamed dumplings with spicy chutney.",
+          "price": 120.0,
+          "image": "steamed_veg_momos.svg",
+          "tags": [
+            "popular"
+          ],
+          "veg": true
+        },
+        {
+          "id": 1041,
+          "name": "Fried Chicken Momos",
+          "description": "Crispy fried momos with tangy dip.",
+          "price": 140.0,
+          "image": "fried_chicken_momos.svg",
+          "tags": [],
+          "veg": false
+        },
+        {
+          "id": 1042,
+          "name": "Tandoori Momos",
+          "description": "Tandoori-spiced momos, smoky and charred.",
+          "price": 150.0,
+          "image": "tandoori_momos.svg",
+          "tags": [
+            "chef special"
+          ],
+          "veg": false
+        }
+      ]
+    },
+    {
+      "id": "sandwiches_burgers",
+      "label": "Sandwiches & Burgers",
+      "items": [
+        {
+          "id": 1050,
+          "name": "Paneer Tikka Sandwich",
+          "description": "Grilled paneer tikka, mint chutney and salad.",
+          "price": 165.0,
+          "image": "paneer_tikka_sandwich.svg",
+          "tags": [
+            "popular"
+          ],
+          "veg": true
+        },
+        {
+          "id": 1051,
+          "name": "Aloo Patty Burger",
+          "description": "Crispy potato patty with classic sauces.",
+          "price": 149.0,
+          "image": "20251120055852_aloo_patty_burger.jpg",
+          "tags": [],
+          "veg": true
+        },
+        {
+          "id": 1052,
+          "name": "Tandoori Chicken Burger",
+          "description": "Smoky grilled chicken with yogurt slaw.",
+          "price": 199.0,
+          "image": "tandoori_chicken_burger.svg",
+          "tags": [],
+          "veg": false
+        }
+      ]
+    },
+    {
+      "id": "fries_sides",
+      "label": "Fries & Sides",
+      "items": [
+        {
+          "id": 1060,
+          "name": "Classic Fries",
+          "description": "Crispy salted fries with house ketchup.",
+          "price": 99.0,
+          "image": "classic_fries.svg",
+          "tags": [
+            "popular"
+          ],
+          "veg": true
+        },
+        {
+          "id": 1061,
+          "name": "Masala Fries",
+          "description": "Fries tossed with chaat masala and spices.",
+          "price": 119.0,
+          "image": "masala_fries.svg",
+          "tags": [
+            "spicy"
+          ],
+          "veg": true
+        }
+      ]
+    },
+    {
+      "id": "paratha",
+      "label": "Parathas",
+      "items": [
+        {
+          "id": 1070,
+          "name": "Aloo Paratha",
+          "description": "Stuffed potato paratha with butter.",
+          "price": 120.0,
+          "image": "20251120055750_aloo_paratha.jpg",
+          "tags": [
+            "popular"
+          ],
+          "veg": true
+        },
+        {
+          "id": 1071,
+          "name": "Paneer Paratha",
+          "description": "Soft paratha stuffed with spiced paneer.",
+          "price": 140.0,
+          "image": "paneer_paratha.svg",
+          "tags": [],
+          "veg": true
+        },
+        {
+          "id": 1072,
+          "name": "Mix Veg Paratha",
+          "description": "Seasonal vegetables stuffed paratha.",
+          "price": 135.0,
+          "image": "mixveg_paratha.svg",
+          "tags": [],
+          "veg": true
+        }
+      ]
+    },
+    {
+      "id": "signature",
+      "label": "Signature Items",
+      "items": [
+        {
+          "id": 1080,
+          "name": "Chaa Choo Special Kathi Roll",
+          "description": "Roomali roti roll with spiced paneer & chutney.",
+          "price": 199.0,
+          "image": "kathi_roll.svg",
+          "tags": [
+            "chef special",
+            "popular"
+          ],
+          "veg": true
+        },
+        {
+          "id": 1081,
+          "name": "Smoked Chai-Cured Salmon (small)",
+          "description": "Café twist — chai-cured salmon, limited.",
+          "price": 349.0,
+          "image": "chai_cured_salmon.svg",
+          "tags": [
+            "new"
+          ],
+          "veg": false
+        }
+      ]
+    },
+    {
+      "id": "desserts",
+      "label": "Desserts & Bakes",
+      "items": [
+        {
+          "id": 1090,
+          "name": "Gulab Jamun Cheesecake (slice)",
+          "description": "Fusion dessert — gulab jamun on cheesecake.",
+          "price": 199.0,
+          "image": "gulab_jamun_cheesecake.svg",
+          "tags": [],
+          "veg": true
+        },
+        {
+          "id": 1091,
+          "name": "Mawa Brownie",
+          "description": "Rich brownie topped with mawa and nuts.",
+          "price": 149.0,
+          "image": "mawa_brownie.svg",
+          "tags": [],
+          "veg": true
+        }
+      ]
+    }
+  ]
+}

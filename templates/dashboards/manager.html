@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manager Dashboard - Chaa Choo</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+        }
+        .navbar {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 0;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+        .navbar-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+            color: white;
+        }
+        .navbar h1 {
+            font-size: 24px;
+        }
+        .user-info {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        .dashboard-title {
+            font-size: 28px;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .kpi-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .kpi-label {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .kpi-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+            position: relative;
+            height: 400px;
+        }
+        .chart-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .logout-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .logout-btn:hover {
+            background: #c82333;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .btn-primary {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: 0.3s;
+        }
+        .btn-primary:hover {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        .btn-secondary {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: 0.3s;
+        }
+        .btn-secondary:hover {
+            background: #0056b3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        /* Recent orders styles */
+        #orders-list { max-height: 420px; overflow-y: auto; padding:6px; }
+        .orders-list { display:flex; flex-direction:column; gap:10px; }
+        .order-card { background: #fff; border-radius:10px; box-shadow:0 6px 18px rgba(16,24,40,0.06); padding:12px; display:flex; flex-direction:column; transition:transform .12s ease, box-shadow .12s ease; }
+        .order-card:hover { transform: translateY(-4px); box-shadow:0 10px 24px rgba(16,24,40,0.08); }
+        .order-row { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap: wrap; }
+        .order-meta { display:flex; gap:12px; align-items:center; min-width:0; flex-wrap: wrap; }
+        .order-id { font-weight:700; color:#0f172a }
+        .order-customer { color:#374151; font-size:14px; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+        .order-attrs { color:#6b7280; font-size:13px }
+        .order-actions { display:flex; gap:8px; align-items:center }
+        .badge { padding:6px 8px; border-radius:999px; color:#fff; font-weight:600; font-size:12px }
+        .badge.new { background:#6366f1 }
+        .badge.queued { background:#f59e0b }
+        .badge.preparing { background:#fb923c }
+        .badge.ready { background:#10b981 }
+        .badge.served { background:#059669 }
+        .badge.cancelled { background:#6b7280 }
+        .btn-small { padding:6px 10px; border-radius:8px; font-size:13px; cursor:pointer; border:none }
+        .btn-details { background:#eef2ff; color:#3730a3 }
+        .btn-prepare { background:#16a34a; color:#fff }
+        .order-details { overflow:hidden; max-height:0; transition:max-height .25s ease; padding-top:0 }
+        .order-details.open { max-height:420px; padding-top:10px }
+        .order-items { font-size:13px; color:#374151 }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <div class="navbar-content">
+            <h1>☕ Chaa Choo - Manager Dashboard</h1>
+            <div class="user-info">
+                <span>Welcome, <strong>{{ session.username }}</strong> ({{ session.role }})</span>
+                <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2 class="dashboard-title">Manager Dashboard</h2>
+
+        <div class="action-buttons">
+            <a href="{{ url_for('manager_create_user') }}" class="btn-primary">➕ Create New User</a>
+            <button id="manage-users-btn" class="btn-secondary">✏️ Manage Users</button>
+            <button id="manage-menu-btn" class="btn-primary" style="background:#ff8c00">🧾 Manage Menu</button>
+            <button id="export-orders-btn" class="btn-secondary" style="background:#10b981">📊 Export Orders</button>
+            <button id="clear-orders-btn" class="btn-secondary" style="background:#ef4444">🗑️ Clear All Orders</button>
+        </div>
+
+    <!-- Manage Users modal -->
+    <div id="users-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:600;align-items:center;justify-content:center"> 
+        <div style="background:white;width:720px;max-width:95%;max-height:80%;overflow:auto;border-radius:8px;padding:16px;position:relative">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <h3 style="margin:0">Manage Users</h3>
+                <div>
+                    <button id="users-modal-close" class="btn-secondary" style="background:#6b7280">Close</button>
+                </div>
+            </div>
+            <div style="margin-bottom:8px;color:#666;font-size:13px">List of users. You cannot delete yourself or other managers via this UI.</div>
+            <div id="users-list" style="max-height:520px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:6px;background:#fafafa">Loading users...</div>
+        </div>
+    </div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Today's Revenue</div>
+                <div class="kpi-value">₹{{ "%.2f"|format(revenue_today) }}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Staff Count</div>
+                <div id="staff-count" class="kpi-value">—</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Avg Staff Efficiency</div>
+                <div id="avg-efficiency" class="kpi-value">—</div>
+            </div>
+        </div>
+        <div style="display:flex;gap:20px;margin-bottom:20px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:260px;background:white;padding:16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+                <div style="font-weight:700;margin-bottom:8px">Shop Details</div>
+                <div id="shop-details">Loading shop details...</div>
+            </div>
+
+            <div style="flex:2;min-width:320px;background:white;padding:16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+                <div style="font-weight:700;margin-bottom:8px">Staff Performance</div>
+                <div id="staff-performance" style="max-height:250px;overflow:auto">Loading staff performance...</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-title">Revenue Trend (14 Days)</div>
+            <canvas id="revenueChart"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-title">Top Selling Items</div>
+            <canvas id="topItemsChart"></canvas>
+        </div>
+
+        <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); margin-bottom: 30px; overflow: hidden;">
+            <div class="chart-title">📋 Recent Orders</div>
+
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+                <div>
+                    <label style="font-size:13px;color:#666;margin-right:6px">Status</label>
+                    <select id="order-status-filter" style="padding:6px;border-radius:6px;border:1px solid #ddd">
+                        <option value="">All</option>
+                        <option value="new">New</option>
+                        <option value="queued">Queued</option>
+                        <option value="preparing">Preparing</option>
+                        <option value="served">Served</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:13px;color:#666;margin-right:6px">Search</label>
+                    <input id="order-search" placeholder="Search by customer or id" style="padding:6px;border-radius:6px;border:1px solid #ddd;min-width:220px" />
+                </div>
+                <div>
+                    <button id="refresh-orders" class="btn-secondary" style="padding:8px 12px">Refresh</button>
+                </div>
+            </div>
+
+            <div id="orders-list" style="max-height: 500px; overflow-y: auto; word-wrap: break-word; overflow-wrap: break-word;">
+                <p style="text-align: center; color: #999;">Loading orders...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Menu manager modal (hidden by default) -->
+    <div id="menu-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;align-items:center;justify-content:center"> 
+        <div style="background:white;width:900px;max-width:95%;max-height:90%;overflow:auto;border-radius:8px;padding:16px;position:relative">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <h3 style="margin:0">Manage Menu</h3>
+                <div>
+                    <button id="menu-modal-close" class="btn-secondary" style="background:#6b7280">Close</button>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+                <div style="flex:1;min-width:260px">
+                    <div style="font-weight:700;margin-bottom:8px">Categories & Items</div>
+                    <div id="menu-categories" style="max-height:520px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:6px;background:#fafafa">Loading...</div>
+                    <div style="margin-top:8px"><button id="menu-new-item" class="btn-primary">+ Add New Item</button></div>
+                </div>
+
+                <div style="flex:1;min-width:300px">
+                    <div style="font-weight:700;margin-bottom:8px">Edit / Add Item</div>
+                    <form id="menu-item-form" enctype="multipart/form-data">
+                        <input type="hidden" name="id" id="form-id" />
+                        <div style="margin-bottom:8px"><label>Name</label><br/><input id="form-name" name="name" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd"/></div>
+                        <div style="margin-bottom:8px"><label>Category ID</label><br/><input id="form-category" name="category_id" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd"/></div>
+                        <div style="margin-bottom:8px"><label>Category Label</label><br/><input id="form-category-label" name="category_label" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd"/></div>
+                        <div style="margin-bottom:8px"><label>Price</label><br/><input id="form-price" name="price" type="number" step="0.01" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd"/></div>
+                        <div style="margin-bottom:8px"><label>Veg</label><br/><select id="form-veg" name="veg" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd"><option value="true">Yes</option><option value="false">No</option></select></div>
+                        <div style="margin-bottom:8px"><label>Tags (comma separated)</label><br/><input id="form-tags" name="tags" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd"/></div>
+                        <div style="margin-bottom:8px"><label>Description</label><br/><textarea id="form-description" name="description" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd" rows="4"></textarea></div>
+                        <div style="margin-bottom:8px"><label>Image (optional)</label><br/><input id="form-image" type="file" name="image" accept="image/*"/></div>
+                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+                            <button type="button" id="menu-item-save" class="btn-primary">Save</button>
+                            <button type="button" id="menu-item-delete" class="btn-secondary" style="background:#ef4444">Delete</button>
+                        </div>
+                        <div id="menu-form-msg" style="margin-top:8px;color:green"></div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        fetch('/api/kpi/revenue_range?days=14')
+            .then(response => response.json())
+            .then(data => {
+                const ctx = document.getElementById('revenueChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            label: 'Revenue (₹)',
+                            data: data.data,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
+            }).catch(err => console.error('Error:', err));
+
+        fetch('/api/top-items?limit=5')
+            .then(response => response.json())
+            .then(data => {
+                const ctx = document.getElementById('topItemsChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.map(item => item.name),
+                        datasets: [{
+                            label: 'Qty Sold',
+                            data: data.map(item => item.qty),
+                            backgroundColor: 'rgba(102, 126, 234, 0.8)'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
+            }).catch(err => console.error('Error:', err));
+
+    async function loadRecentOrders() {
+        try {
+            const statusFilter = document.getElementById('order-status-filter').value || ''
+            const search = (document.getElementById('order-search').value || '').toLowerCase()
+
+            const response = await fetch('/api/orders')
+            const data = await response.json()
+
+            // data.orders may be an array or object; normalize
+            const orders = Array.isArray(data.orders) ? data.orders : (data || [])
+
+            // apply filters
+            const filtered = orders.filter(o => {
+                if (statusFilter && String(o.status) !== statusFilter) return false
+                if (!search) return true
+                const token = `${o.customer_name || ''} ${o.id || ''} ${o.phone || ''}`.toLowerCase()
+                return token.includes(search)
+            })
+
+            if (filtered.length === 0) {
+                document.getElementById('orders-list').innerHTML = '<div style="text-align:center;color:#666;padding:20px">No orders match filters</div>'
+                return
+            }
+
+                        // Render as card list for better visual UX
+                        let html = '<div class="orders-list">'
+
+                        filtered.forEach(order => {
+                                const status = (order.status || '—').toLowerCase()
+                                const total = order.total_amount || order.total || 0
+                                const phone = order.phone || order.customer_phone || ''
+                                const customer = order.customer_name || order.customer || 'Guest'
+                                const time = order.order_time || order.created_at || ''
+
+                                html += `
+                                <div class="order-card" data-order-id="${order.id}">
+                                    <div class="order-row">
+                                        <div class="order-meta">
+                                            <div class="order-id">#${order.id}</div>
+                                            <div class="order-customer">${customer}<div style="color:#9ca3af;font-size:12px">${phone}</div></div>
+                                            <div class="order-attrs">${order.order_type||order.type||'—'} • ${new Date(time).toLocaleString()}</div>
+                                        </div>
+                                        <div style="display:flex;align-items:center;gap:12px">
+                                            <div id="order-status-${order.id}" class="badge ${status}">${status}</div>
+                                            <div style="font-weight:700">₹${parseFloat(total).toFixed(2)}</div>
+                                            <div class="order-actions">
+                                                <button class="btn-small btn-details" onclick="toggleDetails(${order.id})">Details</button>
+                                                <button class="btn-small btn-prepare mark-prepared-btn" onclick="markPrepared(${order.id})">Mark</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="order-details-${order.id}" class="order-details"><div id="order-items-${order.id}" class="order-items">Loading items...</div></div>
+                                </div>`
+                        })
+
+                        html += '</div>'
+                        document.getElementById('orders-list').innerHTML = html
+
+                        // Preload items for first few orders to speed up details view (non-blocking)
+                        filtered.slice(0,5).forEach(o => fetchOrderItems(o.id))
+        } catch (error) {
+            console.error('Error loading orders:', error)
+            document.getElementById('orders-list').innerHTML = '<p style="color: red;">Failed to load orders</p>'
+        }
+    }
+
+    async function fetchOrderItems(orderId){
+        try{
+            // placeholder API path - adjust if your backend uses different route
+            const res = await fetch(`/api/orders/${orderId}`)
+            if (!res.ok) return document.getElementById(`order-items-${orderId}`).textContent = 'Failed to load items'
+            const data = await res.json()
+            // data.order_items or data.items
+            const items = data.items || data.order_items || []
+            if (!items || items.length===0) return document.getElementById(`order-items-${orderId}`).textContent = 'No items recorded'
+            const list = items.map(it=>`<div style="padding:4px 0">${it.name||it.item_name||('Item '+(it.item_id||''))} • qty: ${it.qty||it.quantity||1}</div>`).join('')
+            document.getElementById(`order-items-${orderId}`).innerHTML = `<div style="font-weight:600;margin-bottom:6px">Items</div>${list}`
+        }catch(e){
+            console.error('fetchOrderItems',e)
+            const el = document.getElementById(`order-items-${orderId}`)
+            if (el) el.textContent = 'Failed to load items'
+        }
+    }
+
+    function toggleDetails(orderId){
+        const details = document.getElementById(`order-details-${orderId}`)
+        if (!details) return
+        const isOpen = details.classList.contains('open')
+        if (!isOpen) {
+            details.classList.add('open')
+            // fetch items if placeholder
+            const itemsEl = document.getElementById(`order-items-${orderId}`)
+            if (itemsEl && itemsEl.textContent && itemsEl.textContent.includes('Loading')) fetchOrderItems(orderId)
+        } else {
+            details.classList.remove('open')
+        }
+    }
+
+    async function markPrepared(orderId){
+        const row = document.querySelector(`tr[data-order-id="${orderId}"]`)
+        const statusEl = document.getElementById(`order-status-${orderId}`)
+        const btn = row ? row.querySelector('button.mark-prepared-btn') : null
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Marking...'; }
+
+        // Use a valid status 'ready' (backend accepts: queued, preparing, ready, served, cancelled)
+        const payload = { status: 'ready', changed_by: '{{ session.username }}', timestamp: new Date().toISOString() }
+
+        try{
+            const res = await fetch(`/api/orders/${orderId}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+
+            if (!res.ok) throw new Error('Server returned ' + res.status)
+            const data = await res.json()
+
+            // optimistic UI update
+            if (statusEl) {
+                statusEl.textContent = data.status || 'ready'
+                statusEl.style.background = '#4CAF50'
+            }
+            if (btn) {
+                btn.textContent = 'Prepared'
+                btn.style.background = '#6b7280'
+                btn.disabled = true
+            }
+        }catch(e){
+            console.error('Failed to update order status', e)
+            alert('Failed to update order status')
+            if (btn) { btn.disabled = false; btn.textContent = 'Mark prepared' }
+        }
+    }
+
+    // debounce helper to avoid excessive fetches while typing
+    function debounce(fn, wait){
+        let t
+        return function(...args){
+            clearTimeout(t)
+            t = setTimeout(()=>fn.apply(this,args), wait)
+        }
+    }
+
+    // wire up controls
+    const statusEl = document.getElementById('order-status-filter')
+    const searchEl = document.getElementById('order-search')
+    const refreshBtn = document.getElementById('refresh-orders')
+    if (statusEl) statusEl.addEventListener('change', loadRecentOrders)
+    if (searchEl) searchEl.addEventListener('input', debounce(loadRecentOrders, 300))
+    if (refreshBtn) refreshBtn.addEventListener('click', loadRecentOrders)
+
+    // initial load and polling
+    loadRecentOrders();
+    setInterval(loadRecentOrders, 5000);
+    </script>
+    <script>
+    // Load shop details and staff performance
+    async function loadManagerExtras(){
+        try{
+            const [shopRes, staffRes] = await Promise.all([
+                fetch('/api/shop/details'),
+                fetch('/api/staff/performance')
+            ])
+            const shop = await shopRes.json()
+            const staffData = await staffRes.json()
+
+            document.getElementById('shop-details').innerHTML = `
+                <div>${shop.name}</div>
+                <div style="color:#666;font-size:13px">${shop.address}</div>
+                <div style="margin-top:6px;color:#666;font-size:13px">Hours: ${shop.open_hours}</div>
+                <div style="margin-top:6px;color:#666;font-size:13px">Staff: ${shop.staff_count ?? '—'} • Inventory items tracked: ${shop.inventory_count ?? '—'}</div>
+            `
+
+            const staff = (staffData.staff||[])
+            document.getElementById('staff-count').textContent = staff.length
+
+            // compute efficiency if values present
+            let sumEff = 0, count=0
+            staff.forEach(s=>{
+                const eff = Number(s.efficiency_pct) || (s.scheduled_hours ? Math.round((s.worked_hours / s.scheduled_hours)*100) : 0)
+                sumEff += eff; count++
+            })
+            const avg = count? Math.round(sumEff/count):0
+            document.getElementById('avg-efficiency').textContent = avg + '%'
+
+            // render staff table
+            const sp = document.getElementById('staff-performance')
+            if (staff.length===0){ sp.innerHTML = '<div style="color:#666">No staff records found.</div>' }
+            else{
+                let html = '<table style="width:100%;font-size:13px;border-collapse:collapse;"><thead><tr style="background:#f5f5f5"><th style="padding:8px;text-align:left">Name</th><th style="padding:8px">Role</th><th style="padding:8px">Worked</th><th style="padding:8px">Scheduled</th><th style="padding:8px">Tasks</th><th style="padding:8px">Eff %</th></tr></thead><tbody>'
+                staff.forEach(s=>{
+                    html += `<tr style="border-bottom:1px solid #eee"><td style="padding:8px">${s.name}</td><td style="padding:8px;text-align:center">${s.role}</td><td style="padding:8px;text-align:center">${s.worked_hours}</td><td style="padding:8px;text-align:center">${s.scheduled_hours}</td><td style="padding:8px;text-align:center">${s.tasks_completed}</td><td style="padding:8px;text-align:center">${s.efficiency_pct || (s.scheduled_hours? Math.round((s.worked_hours/s.scheduled_hours)*100):0)}%</td></tr>`
+                })
+                html += '</tbody></table>'
+                sp.innerHTML = html
+            }
+        }catch(e){
+            console.error('Failed to load manager extras', e)
+            document.getElementById('shop-details').textContent = 'Failed to load shop details'
+            document.getElementById('staff-performance').textContent = 'Failed to load staff performance'
+        }
+    }
+
+    loadManagerExtras()
+    setInterval(loadManagerExtras, 60000)
+    </script>
+    <script>
+    // Manage Users modal script
+    const manageUsersBtn = document.getElementById('manage-users-btn')
+    const usersModal = document.getElementById('users-modal')
+    const usersClose = document.getElementById('users-modal-close')
+    const usersListEl = document.getElementById('users-list')
+
+    function openUsersModal(){ usersModal.style.display = 'flex'; fetchUsers() }
+    function closeUsersModal(){ usersModal.style.display = 'none' }
+
+    manageUsersBtn && manageUsersBtn.addEventListener('click', openUsersModal)
+    usersClose && usersClose.addEventListener('click', closeUsersModal)
+
+    async function fetchUsers(){
+        usersListEl.innerHTML = 'Loading...'
+        try{
+            const res = await fetch('/api/manager/users')
+            if(!res.ok) throw new Error('Failed')
+            const data = await res.json()
+            renderUsers(data.users||[])
+        }catch(e){ console.error(e); usersListEl.innerHTML = '<div style="color:#c00">Failed to load users</div>' }
+    }
+
+    function renderUsers(users){
+        if(!users.length) { usersListEl.innerHTML = '<div style="color:#666">No users found</div>'; return }
+        let html = '<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="background:#f5f5f5"><th style="padding:8px;text-align:left">Username</th><th style="padding:8px">Role</th><th style="padding:8px">Action</th></tr></thead><tbody>'
+        users.forEach(u=>{
+            const disabled = (u.id === {{ session.user_id }} ) || u.role === 'manager'
+            html += `<tr style="border-bottom:1px solid #eee"><td style="padding:8px">${u.username}</td><td style="padding:8px;text-align:center">${u.role}</td><td style="padding:8px;text-align:center">`+
+                    (disabled? '<span style="color:#999">Protected</span>' : `<button class="btn-secondary" onclick="deleteUser(${u.id}, '${u.username}')" style="background:#ef4444">Remove</button>`) +
+                    `</td></tr>`
+        })
+        html += '</tbody></table>'
+        usersListEl.innerHTML = html
+    }
+
+    async function deleteUser(id, username){
+        if(!confirm('Delete user '+username+' ?')) return
+        try{
+            const res = await fetch('/api/manager/users/'+id, { method: 'DELETE' })
+            const data = await res.json()
+            if(!res.ok){ alert('Delete failed: ' + (data.error||'unknown')); return }
+            alert('User deleted')
+            fetchUsers()
+        }catch(e){ console.error(e); alert('Delete failed') }
+    }
+    </script>
+    <script>
+    // Export and Clear orders scripts
+    const exportBtn = document.getElementById('export-orders-btn')
+    const clearBtn = document.getElementById('clear-orders-btn')
+
+    exportBtn && exportBtn.addEventListener('click', async ()=>{
+        try{
+            const fmt = prompt('Export format: csv or json?', 'csv')
+            if(!fmt) return
+            if(!['csv','json'].includes(fmt.toLowerCase())) { alert('Invalid format'); return }
+            const res = await fetch('/api/manager/orders/export?format='+fmt.toLowerCase())
+            if(!res.ok) throw new Error('Export failed')
+            const blob = await res.blob()
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g,'') || 'orders.'+fmt
+            document.body.appendChild(a)
+            a.click()
+            window.URL.revokeObjectURL(url)
+            a.remove()
+            alert('Export started')
+        }catch(e){
+            console.error(e)
+            alert('Export failed: '+e.message)
+        }
+    })
+
+    clearBtn && clearBtn.addEventListener('click', async ()=>{
+        if(!confirm('⚠️ This will DELETE ALL orders from the database. Are you sure?')) return
+        const confirm2 = prompt('Type YES_DELETE_ALL to confirm:')
+        if(confirm2 !== 'YES_DELETE_ALL') { alert('Cancelled'); return }
+        try{
+            const res = await fetch('/api/manager/orders/clear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirm: 'YES_DELETE_ALL' })
+            })
+            const data = await res.json()
+            if(!res.ok) { alert('Clear failed: '+(data.error||'unknown')); return }
+            alert('✅ All orders cleared from database')
+            loadRecentOrders()
+        }catch(e){
+            console.error(e)
+            alert('Clear failed: '+e.message)
+        }
+    })
+    <script>
+    // Menu manager scripts
+    const manageMenuBtn = document.getElementById('manage-menu-btn')
+    const menuModal = document.getElementById('menu-modal')
+    const menuClose = document.getElementById('menu-modal-close')
+    const categoriesEl = document.getElementById('menu-categories')
+    const newItemBtn = document.getElementById('menu-new-item')
+    const form = document.getElementById('menu-item-form')
+    const formMsg = document.getElementById('menu-form-msg')
+
+    let currentMenu = null
+
+    function openModal(){ menuModal.style.display = 'flex'; fetchMenu() }
+    function closeModal(){ menuModal.style.display = 'none'; clearForm() }
+
+    manageMenuBtn && manageMenuBtn.addEventListener('click', openModal)
+    menuClose && menuClose.addEventListener('click', closeModal)
+
+    async function fetchMenu(){
+        categoriesEl.innerHTML = 'Loading...'
+        try{
+            const res = await fetch('/api/manager/menu')
+            if(!res.ok) throw new Error('Failed to load menu')
+            currentMenu = await res.json()
+            renderCategories()
+        }catch(e){
+            console.error(e)
+            categoriesEl.innerHTML = '<div style="color:#c00">Failed to load menu</div>'
+        }
+    }
+
+    function renderCategories(){
+        if(!currentMenu || !currentMenu.categories) { categoriesEl.innerHTML = '<div>No categories found</div>'; return }
+        let html = ''
+        currentMenu.categories.forEach(cat=>{
+            html += `<div style="margin-bottom:10px;padding:8px;border-radius:6px;background:#fff;border:1px solid #eee"><div style="font-weight:700;margin-bottom:6px">${cat.label} <span style="color:#888;font-size:12px">(${cat.id})</span></div>`
+            if(cat.items && cat.items.length){
+                cat.items.forEach(it=>{
+                    html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px dashed #f0f0f0">`+
+                            `<div style="min-width:0"><div style="font-weight:600">${it.name}</div><div style="color:#666;font-size:13px">₹${parseFloat(it.price||0).toFixed(2)} • ${it.veg? 'Veg':'Non-veg'}</div></div>`+
+                            `<div style="display:flex;gap:8px"><button class="btn-secondary" onclick="editItem(${it.id})">Edit</button>`+
+                            `</div></div>`
+                })
+            } else { html += '<div style="color:#666">No items</div>' }
+            html += '</div>'
+        })
+        categoriesEl.innerHTML = html
+    }
+
+    window.editItem = function(itemId){
+        // find item by id
+        for(const cat of (currentMenu.categories||[])){
+            for(const it of (cat.items||[])){
+                if(String(it.id) === String(itemId)){
+                    // populate form
+                    document.getElementById('form-id').value = it.id
+                    document.getElementById('form-name').value = it.name || ''
+                    document.getElementById('form-category').value = cat.id || ''
+                    document.getElementById('form-category-label').value = cat.label || ''
+                    document.getElementById('form-price').value = it.price || 0
+                    document.getElementById('form-veg').value = it.veg? 'true':'false'
+                    document.getElementById('form-tags').value = (it.tags||[]).join(', ')
+                    document.getElementById('form-description').value = it.description || ''
+                    formMsg.textContent = ''
+                    // open modal if not open
+                    if(menuModal.style.display === 'none') menuModal.style.display = 'flex'
+                    return
+                }
+            }
+        }
+        alert('Item not found')
+    }
+
+    newItemBtn && newItemBtn.addEventListener('click', ()=>{
+        clearForm(); document.getElementById('form-category').focus()
+    })
+
+    function clearForm(){
+        form.reset(); document.getElementById('form-id').value = ''
+        formMsg.textContent = ''
+    }
+
+    document.getElementById('menu-item-save').addEventListener('click', async ()=>{
+        try{
+            const fd = new FormData(form)
+            formMsg.style.color = 'green'; formMsg.textContent = 'Saving...'
+            const res = await fetch('/api/manager/menu/item', { method: 'POST', body: fd })
+            const data = await res.json()
+            if(!res.ok) { formMsg.style.color = 'red'; formMsg.textContent = data.error || data.details || 'Save failed'; return }
+            formMsg.style.color = 'green'; formMsg.textContent = 'Saved'
+            await fetchMenu()
+        }catch(e){ console.error(e); formMsg.style.color='red'; formMsg.textContent='Save failed' }
+    })
+
+    // simple delete from JSON (no endpoint): remove locally and save by sending a full update via API for the item id
+    document.getElementById('menu-item-delete').addEventListener('click', async ()=>{
+        const id = document.getElementById('form-id').value
+        if(!id){ alert('No item selected to delete'); return }
+        if(!confirm('Delete this item from menu.json? This cannot be undone via UI.')) return
+        // remove item from currentMenu then save entire menu file by reusing POST for existing items with minimal data
+        try{
+            // remove item
+            for(const cat of (currentMenu.categories||[])){
+                const idx = (cat.items||[]).findIndex(i=>String(i.id)===String(id))
+                if(idx>=0){ cat.items.splice(idx,1); break }
+            }
+            // save whole menu by writing via backend helper: we'll POST a dummy item then call a special save endpoint? Simpler: call /api/manager/menu with PUT not available
+            // As a safe fallback, ask user to edit file directly if delete endpoint not available.
+            // Use fetch to call a lightweight endpoint to overwrite menu.json (not implemented). Inform user.
+            alert('Deleted locally. Please save via the server console or re-open modal to refresh. (Delete currently requires server-side save support)')
+            renderCategories()
+        }catch(e){ console.error(e); alert('Delete failed') }
+    })
+    </script>
+</body>
+</html>

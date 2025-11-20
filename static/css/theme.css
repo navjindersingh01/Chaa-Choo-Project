@@ -1,0 +1,74 @@
+/* Theme tokens and utility classes for Chaa Choo
+   - Provides CSS variables for color palette, typography and spacing
+   - Includes dark mode overrides via [data-theme="dark"] on <html>
+   - Add to templates: <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}"> */
+:root{
+  /* Colors (tea-inspired) */
+  --color-primary: #8B5E3C; /* warm brown */
+  --color-primary-600: #7a4f30;
+  --color-accent: #d97706; /* saffron / amber */
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --neutral-900: #0f172a;
+  --neutral-800: #1f2937;
+  --neutral-700: #374151;
+  --neutral-600: #4b5563;
+  --neutral-300: #d1d5db;
+  --neutral-100: #f3f4f6;
+  --surface: #ffffff;
+  --on-surface: #111827;
+
+  /* Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-size-sm: 0.85rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+
+  /* Spacing & radii */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(16,24,40,0.04);
+  --shadow-md: 0 6px 16px rgba(15,23,42,0.08);
+
+  /* Transitions */
+  --trans-fast: 160ms;
+  --trans-medium: 280ms;
+}
+
+/* Dark theme overrides */
+[data-theme="dark"]{
+  --surface: #0b1220;
+  --on-surface: #e6eef8;
+  --neutral-900: #e6eef8;
+  --neutral-800: #cbd5e1;
+  --neutral-700: #94a3b8;
+  --neutral-600: #64748b;
+  --neutral-300: #334155;
+  --neutral-100: #0b1220;
+}
+
+/* Utility classes mapped to tokens */
+.card{background:var(--surface);color:var(--on-surface);border-radius:var(--radius-md);box-shadow:var(--shadow-md);border:1px solid var(--neutral-300);}
+.kpi-card{background:linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0.6));padding:12px;border-radius:14px;display:flex;align-items:center;justify-content:space-between}
+.glass{backdrop-filter: blur(6px);background: rgba(255,255,255,0.6);border-radius:var(--radius-lg);}
+.muted-text{color:var(--neutral-600)}
+
+/* Accessible focus ring */
+.focus-ring:focus{outline:3px solid rgba(167,139,74,0.22);outline-offset:2px}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce){
+  *{transition:none!important}
+}
+
+/* Example button token classes */
+.btn-primary{background:var(--color-primary);color:#fff;padding:10px 14px;border-radius:9999px;border:none}
+.btn-primary:hover{background:var(--color-primary-600)}
+
+/* TODO: adjust tokens after visual QA. */

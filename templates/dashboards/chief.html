@@ -1,0 +1,495 @@
+{% extends "dashboards/base.html" %}
+
+{% block title %}Chief Dashboard - Chaa Choo{% endblock %}
+{% block page_title %}👨‍🍳 Kitchen Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+  .tab-container {
+    margin-bottom: 2rem;
+  }
+
+  .tab-navigation {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .tab-button {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #6b7280;
+    border-bottom: 3px solid transparent;
+    transition: all var(--transition-fast);
+    position: relative;
+    bottom: -2px;
+  }
+
+  .tab-button:hover {
+    color: var(--color-primary);
+  }
+
+  .tab-button.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+  }
+
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  .status-column {
+    display: flex;
+    gap: 1rem;
+  }
+
+  .status-box {
+    flex: 1;
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+  }
+
+  .status-box.queued {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+    border-left: 4px solid #3b82f6;
+  }
+
+  .status-box.preparing {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border-left: 4px solid #f59e0b;
+  }
+
+  .status-box.ready {
+    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+    border-left: 4px solid #10b981;
+  }
+
+  .status-count {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--color-dark);
+    margin: 0.5rem 0;
+  }
+
+  .status-label {
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #374151;
+  }
+
+  .order-timeline {
+    display: grid;
+    gap: 1rem;
+    max-height: 500px;
+    overflow-y: auto;
+  }
+
+  .order-card {
+    display: grid;
+    grid-template-columns: 100px 1fr 80px;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem;
+    background: var(--color-white);
+    border-radius: 8px;
+    border-left: 4px solid #d4a574;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+  }
+
+  .order-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateX(4px);
+  }
+
+  .order-card.delayed {
+    border-left-color: #ef4444;
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  }
+
+  .order-id {
+    font-weight: 700;
+    color: var(--color-primary);
+    font-size: 1.125rem;
+  }
+
+  .order-items {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin: 0.25rem 0;
+  }
+
+  .order-time {
+    font-size: 0.75rem;
+    color: #9ca3af;
+  }
+
+  .prep-time {
+    text-align: center;
+    font-weight: 600;
+  }
+
+  .prep-time-value {
+    font-size: 1.25rem;
+    color: var(--color-dark);
+  }
+
+  .prep-time-label {
+    font-size: 0.75rem;
+    color: #6b7280;
+    text-transform: uppercase;
+  }
+
+  .quick-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .action-btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .action-btn.ready {
+    background-color: var(--color-success);
+    color: white;
+  }
+
+  .action-btn.ready:hover {
+    background-color: #059669;
+  }
+
+  .action-btn.delay {
+    background-color: var(--color-warning);
+    color: white;
+  }
+
+  .action-btn.delay:hover {
+    background-color: #d97706;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tab-container">
+  <div class="tab-navigation">
+    <button class="tab-button active" onclick="switchTab('overview', this)">📊 Overview</button>
+    <button class="tab-button" onclick="switchTab('queue', this)">🔔 Active Orders</button>
+    <button class="tab-button" onclick="switchTab('metrics', this)">📈 Metrics</button>
+  </div>
+
+  <!-- Overview Tab -->
+  <div id="overview" class="tab-content active">
+    <div class="grid-3" style="margin-bottom: 2rem;">
+      <!-- Metrics Cards -->
+      <div class="metric-card">
+        <div>
+          <div class="metric-label">Avg Prep Time</div>
+          <div class="metric-value" id="avg-prep-time">0 min</div>
+        </div>
+        <div class="metric-icon">⏱️</div>
+      </div>
+
+      <div class="metric-card success">
+        <div>
+          <div class="metric-label">Completed Today</div>
+          <div class="metric-value" id="completed-count">0</div>
+        </div>
+        <div class="metric-icon">✅</div>
+      </div>
+
+      <div class="metric-card error">
+        <div>
+          <div class="metric-label">Delayed Orders</div>
+          <div class="metric-value" id="delayed-count">0</div>
+        </div>
+        <div class="metric-icon">⚠️</div>
+      </div>
+    </div>
+
+    <!-- Status Summary -->
+    <div class="status-column" style="margin-bottom: 2rem;">
+      <div class="status-box queued">
+        <div class="status-count" id="queued-count">0</div>
+        <div class="status-label">In Queue</div>
+      </div>
+      <div class="status-box preparing">
+        <div class="status-count" id="preparing-count">0</div>
+        <div class="status-label">Preparing</div>
+      </div>
+      <div class="status-box ready">
+        <div class="status-count" id="ready-count">0</div>
+        <div class="status-label">Ready</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Orders Tab -->
+  <div id="queue" class="tab-content">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Kitchen Queue</div>
+          <div class="card-subtitle">Real-time order management</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="location.reload()">🔄 Refresh</button>
+      </div>
+      <div class="order-timeline" id="orders-list">
+        <div style="text-align: center; padding: 2rem; color: #9ca3af;">Loading orders...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metrics Tab -->
+  <div id="metrics" class="tab-content">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Kitchen Performance</div>
+          <div class="card-subtitle">Today's statistics</div>
+        </div>
+      </div>
+      <div style="padding: 1.5rem;">
+        <div class="grid-2">
+          <div class="metric-card">
+            <div>
+              <div class="metric-label">Total Orders</div>
+              <div class="metric-value" id="total-orders">0</div>
+            </div>
+            <div class="metric-icon">📋</div>
+          </div>
+
+          <div class="metric-card success">
+            <div>
+              <div class="metric-label">On-Time Rate</div>
+              <div class="metric-value" id="on-time-rate">0%</div>
+            </div>
+            <div class="metric-icon">⚡</div>
+          </div>
+
+          <div class="metric-card">
+            <div>
+              <div class="metric-label">Avg Service Time</div>
+              <div class="metric-value" id="avg-service-time">0 min</div>
+            </div>
+            <div class="metric-icon">🕐</div>
+          </div>
+
+          <div class="metric-card warning">
+            <div>
+              <div class="metric-label">Peak Hour</div>
+              <div class="metric-value" id="peak-hour">--:--</div>
+            </div>
+            <div class="metric-icon">🔥</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const dashboardClient = new DashboardClient('chief');
+
+  // Tab switching function
+  function switchTab(tabName, buttonElement) {
+    // Hide all tab contents
+    const contents = document.querySelectorAll('.tab-content');
+    contents.forEach(content => content.classList.remove('active'));
+    
+    // Remove active class from all buttons
+    const buttons = document.querySelectorAll('.tab-button');
+    buttons.forEach(btn => btn.classList.remove('active'));
+    
+    // Show selected tab and mark button as active
+    const selectedTab = document.getElementById(tabName);
+    if (selectedTab) {
+      selectedTab.classList.add('active');
+    }
+    buttonElement.classList.add('active');
+    
+    // Load tab-specific data if needed
+    if (tabName === 'queue') {
+      loadActiveOrders();
+    } else if (tabName === 'metrics') {
+      loadDetailedMetrics();
+    }
+  }
+
+  // Load initial data
+  async function loadChiefDashboard() {
+    try {
+      const data = await DashboardAPI.get('/api/kpis/chef?range_hours=24');
+      console.log('Chief KPIs:', data);
+      
+      document.getElementById('avg-prep-time').textContent = `${Math.round(data.avg_prep_time || 0)} min`;
+      document.getElementById('completed-count').textContent = data.orders_completed || 0;
+      document.getElementById('delayed-count').textContent = data.delayed_orders || 0;
+      
+      // Load active orders
+      loadActiveOrders();
+    } catch (error) {
+      console.error('Failed to load dashboard:', error);
+    }
+  }
+
+  async function loadActiveOrders() {
+    try {
+      const response = await DashboardAPI.get('/api/orders');
+      const orders = response.orders || [];
+      
+      // Filter active orders (queued, preparing, ready)
+      const activeOrders = orders.filter(o => ['queued', 'preparing', 'ready'].includes(o.status));
+      
+      const list = document.getElementById('orders-list');
+      
+      if (activeOrders.length === 0) {
+        list.innerHTML = '<div style="text-align: center; padding: 2rem; color: #9ca3af;">No active orders</div>';
+        return;
+      }
+
+      // Count by status
+      const queued = activeOrders.filter(o => o.status === 'queued').length;
+      const preparing = activeOrders.filter(o => o.status === 'preparing').length;
+      const ready = activeOrders.filter(o => o.status === 'ready').length;
+
+      document.getElementById('queued-count').textContent = queued;
+      document.getElementById('preparing-count').textContent = preparing;
+      document.getElementById('ready-count').textContent = ready;
+
+      list.innerHTML = activeOrders.map(order => {
+        const itemCount = order.items ? order.items.length : 0;
+        const elapsedTime = DashboardUtils.getElapsedTime(order.created_at);
+        const isDelayed = !order.priority || order.priority !== 'normal'; // Simple delay indicator
+        
+        return `
+          <div class="order-card ${isDelayed ? 'delayed' : ''}">
+            <div>
+              <div class="order-id">#${order.id}</div>
+              <div class="order-time">${DashboardUtils.formatTime(order.created_at)}</div>
+            </div>
+            <div>
+              <div class="order-items">${itemCount} item${itemCount !== 1 ? 's' : ''}</div>
+              <div class="order-items" style="color: #059669;">Status: <strong>${order.status.toUpperCase()}</strong></div>
+              <div class="order-items">Priority: ${order.priority || 'normal'}</div>
+            </div>
+            <div class="quick-actions">
+              ${order.status === 'queued' ? `
+                <button class="action-btn ready" onclick="updateOrderStatus(${order.id}, 'preparing')">Prepare</button>
+              ` : ''}
+              ${order.status === 'preparing' ? `
+                <button class="action-btn ready" onclick="updateOrderStatus(${order.id}, 'ready')">Ready</button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (error) {
+      console.error('Failed to load orders:', error);
+    }
+  }
+
+  async function loadDetailedMetrics() {
+    try {
+      const response = await DashboardAPI.get('/api/orders');
+      const orders = response.orders || [];
+      
+      // Calculate metrics from current orders
+      const totalOrders = orders.length;
+      const completedOrders = orders.filter(o => o.status === 'delivered' || o.status === 'completed').length;
+      const onTimeRate = totalOrders > 0 ? (completedOrders / totalOrders) : 0;
+      
+      // Calculate average service time from timestamps
+      let totalServiceTime = 0;
+      let serviceTimeCount = 0;
+      orders.forEach(order => {
+        if (order.created_at) {
+          const elapsed = DashboardUtils.getElapsedTime(order.created_at);
+          totalServiceTime += elapsed;
+          serviceTimeCount++;
+        }
+      });
+      const avgServiceTime = serviceTimeCount > 0 ? Math.round(totalServiceTime / serviceTimeCount) : 0;
+      
+      // Find peak hour
+      const hourCounts = {};
+      orders.forEach(order => {
+        if (order.created_at) {
+          const hour = new Date(order.created_at).getHours();
+          hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+        }
+      });
+      let peakHour = '--:--';
+      let maxCount = 0;
+      for (const [hour, count] of Object.entries(hourCounts)) {
+        if (count > maxCount) {
+          maxCount = count;
+          peakHour = `${String(hour).padStart(2, '0')}:00`;
+        }
+      }
+      
+      // Update DOM
+      document.getElementById('total-orders').textContent = totalOrders;
+      document.getElementById('on-time-rate').textContent = `${Math.round(onTimeRate * 100)}%`;
+      document.getElementById('avg-service-time').textContent = `${avgServiceTime} min`;
+      document.getElementById('peak-hour').textContent = peakHour;
+      
+      console.log('Detailed metrics:', { totalOrders, onTimeRate, avgServiceTime, peakHour });
+    } catch (error) {
+      console.error('Failed to load detailed metrics:', error);
+      // Set default values if fetch fails
+      document.getElementById('total-orders').textContent = '0';
+      document.getElementById('on-time-rate').textContent = '0%';
+      document.getElementById('avg-service-time').textContent = '0 min';
+      document.getElementById('peak-hour').textContent = '--:--';
+    }
+  }
+
+  async function updateOrderStatus(orderId, newStatus) {
+    try {
+      await DashboardAPI.put(`/api/orders/${orderId}/status`, { status: newStatus });
+      DashboardUtils.showToast(`Order #${orderId} moved to ${newStatus}`, 'success');
+      loadActiveOrders();
+    } catch (error) {
+      DashboardUtils.showToast('Failed to update order', 'error');
+    }
+  }
+
+  // Real-time updates
+  dashboardClient.on('new_order', (data) => {
+    console.log('New order received:', data);
+    loadActiveOrders();
+    DashboardUtils.showToast(`📦 New order #${data.order_id}`, 'info');
+  });
+
+  dashboardClient.on('order_status_changed', (data) => {
+    console.log('Order status changed:', data);
+    loadActiveOrders();
+  });
+
+  // Load data on page load
+  loadChiefDashboard();
+  
+  // Refresh every 30 seconds
+  setInterval(loadActiveOrders, 30000);
+</script>
+{% endblock %}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create User - Manager</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    .form-card { max-width: 600px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 8px; }
+    label { display:block; margin-bottom:6px; font-weight:600 }
+    input, select { width:100%; padding:8px; margin-bottom:12px; border-radius:4px; border:1px solid #ccc }
+    .btn { background:#667eea; color:#fff; padding:10px 16px; border:none; border-radius:6px; cursor:pointer }
+  </style>
+</head>
+<body>
+  <div style="max-width:1000px;margin:20px auto;padding:0 20px;">
+    <h1>Create User (Manager)</h1>
+    <p>Only users with the <strong>manager</strong> role can create other accounts.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div>
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="form-card">
+      <form method="post">
+        <label for="username">Username</label>
+        <input id="username" name="username" placeholder="lowercase username" required>
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" placeholder="password" required>
+
+        <label for="role">Role</label>
+        <select id="role" name="role">
+          <option value="chief">Chief (cook)</option>
+          <option value="receptionist">Receptionist</option>
+          <option value="inventory">Inventory</option>
+          <option value="manager">Manager</option>
+        </select>
+
+        <button class="btn" type="submit">Create User</button>
+      </form>
+    </div>
+
+    <p><a href="{{ url_for('dashboard', role='manager') }}">Back to manager dashboard</a></p>
+  </div>
+</body>
+</html>
