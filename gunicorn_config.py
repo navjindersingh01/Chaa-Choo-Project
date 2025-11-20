@@ -29,7 +29,7 @@ proc_name = 'chaa-choo'
 
 # Server mechanics
 daemon = False
-pidfile = '/var/run/gunicorn.pid'
+pidfile = '/tmp/gunicorn.pid'
 umask = 0
 user = os.getenv('GUNICORN_USER', 'www-data')
 group = os.getenv('GUNICORN_GROUP', 'www-data')
