@@ -1,3 +1,4 @@
+# Consolidated imports and app/config initialization
 import traceback
 import logging
 import os
@@ -10,16 +11,20 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 load_dotenv()
 
+# Basic runtime flags
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('1', 'true', 'yes')
+FLASK_ENV = os.getenv('FLASK_ENV', 'production').lower()
+is_dev = FLASK_ENV in ('development', 'dev') or DEBUG
+
 # Configure logging
 log_file = os.getenv("LOG_FILE", "error.log")
-log_level = logging.DEBUG if os.getenv("DEBUG", "False").lower() == "true" else logging.INFO
+log_level = logging.DEBUG if DEBUG else logging.INFO
 logging.basicConfig(
     filename=log_file,
     level=log_level,
     format='%(asctime)s %(levelname)s: %(message)s'
 )
 
-# app.py
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -27,42 +32,22 @@ from werkzeug.utils import secure_filename
 import mysql.connector
 from functools import wraps
 
-
-# ----- CONFIG -----
-# Read all configuration from environment variables
+# Read DB config from environment
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "11111111")
 DB_NAME = os.getenv("DB_NAME", "cafe_ca3")
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
-from flask_socketio import SocketIO, emit, join_room, leave_room
-from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
-import mysql.connector
-from functools import wraps
-from datetime import timedelta
-import os
 
-# ...existing code...
-
-# Single Flask app creation and environment-driven config (keep this before routes/extensions)
+# Create single Flask app instance
 app = Flask(__name__)
 
-# Basic environment-driven settings
-SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-for-local')
-DEBUG = os.getenv('DEBUG', 'False').lower() in ('1', 'true', 'yes')
-FLASK_ENV = os.getenv('FLASK_ENV', 'production').lower()
-
-is_dev = FLASK_ENV in ('development', 'dev') or DEBUG
-
-# Core Flask settings
+# Load environment-driven settings
 app.config.update({
-    'SECRET_KEY': SECRET_KEY,
+    'SECRET_KEY': os.getenv('SECRET_KEY', 'dev-secret-for-local'),
     'DEBUG': DEBUG,
     'ENV': FLASK_ENV,
     'PROPAGATE_EXCEPTIONS': True,
     'JSON_SORT_KEYS': False,
-    # Sessions/cookie security: override via env vars if needed
     'SESSION_COOKIE_SECURE': False if is_dev else os.getenv('SESSION_COOKIE_SECURE', 'true').lower() in ('1','true','yes'),
     'SESSION_COOKIE_SAMESITE': os.getenv('SESSION_COOKIE_SAMESITE', 'Lax'),
     'PERMANENT_SESSION_LIFETIME': timedelta(
@@ -70,54 +55,18 @@ app.config.update({
     )
 })
 
-# Upload settings for menu images
-app.config['MENU_IMAGE_FOLDER'] = os.path.join(app.root_path, 'static', 'images', 'menu')
-os.makedirs(app.config['MENU_IMAGE_FOLDER'], exist_ok=True)
-ALLOWED_IMAGE_EXT = {'.png', '.jpg', '.jpeg', '.svg', '.gif'}
+# Attempt to apply config classes from config.py if present
+try:
+    from config import DevelopmentConfig, ProductionConfig
+    cfg = DevelopmentConfig if FLASK_ENV in ('development', 'dev') else ProductionConfig
+    app.config.from_object(cfg)
+except Exception:
+    # keep env-driven config if config module isn't available
+    logging.debug('config.py not loaded; using environment-driven config')
 
-# Configure SocketIO (use DEBUG from env)
-socketio = SocketIO(
-    app,
-    cors_allowed_origins="*",
-    logger=DEBUG,
-    engineio_logger=DEBUG,
-    async_mode='threading'
-)
+# Ensure secret is set on app
+app.secret_key = app.config.get('SECRET_KEY', app.secret_key)
 
-import os
-from config import DevelopmentConfig, ProductionConfig
-
-app = Flask(__name__)
-env = os.getenv('FLASK_ENV', 'production').lower()
-app.config.from_object(DevelopmentConfig if env in ('development','dev') else ProductionConfig)
-# ensure secret is accessible as app.secret_key if you use it directly
-app.secret_key = app.config['SECRET_KEY']
-# ...existing code...
-import os
-from datetime import timedelta
-
-app = Flask(__name__)
-# ...existing code...
-
-# load secret and session settings from environment (fallbacks for local dev)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-for-local')
-is_dev = os.getenv('FLASK_ENV', '').lower() in ('development', 'dev') or os.getenv('DEBUG', '').lower() == 'true'
-app.config['SESSION_COOKIE_SECURE'] = False if is_dev else os.getenv('SESSION_COOKIE_SECURE', 'true').lower() == 'true'
-app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(
-    seconds=int(os.getenv('PERMANENT_SESSION_LIFETIME', str(60*60*24*7)))
-)
-# ...existing code...
-SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret_in_production")
-DEBUG = os.getenv("DEBUG", "False").lower() == "true"
-FLASK_ENV = os.getenv("FLASK_ENV", "development")
-
-app = Flask(__name__)
-app.secret_key = SECRET_KEY
-app.config['DEBUG'] = DEBUG
-app.config['ENV'] = FLASK_ENV
-app.config['PROPAGATE_EXCEPTIONS'] = True
-app.config['JSON_SORT_KEYS'] = False
 # Upload settings for menu images
 app.config['MENU_IMAGE_FOLDER'] = os.path.join(app.root_path, 'static', 'images', 'menu')
 os.makedirs(app.config['MENU_IMAGE_FOLDER'], exist_ok=True)
@@ -690,9 +639,72 @@ def manager_users_page():
 def manager_users_delete(user_id):
     """Server-side deletion to avoid JS. Prevent deleting self or managers."""
     try:
+        logging.info(f"manager_users_delete called by user_id={session.get('user_id')} target_user_id={user_id}")
         if session.get('user_id') == user_id:
             flash('Cannot delete the currently logged-in user', 'warning')
             return redirect(url_for('manager_users_page'))
+        
+        db = get_db_connection()
+        cur = db.cursor(dictionary=True)
+        cur.execute("SELECT id, username, role FROM users WHERE id=%s", (user_id,))
+        user = cur.fetchone()
+        if not user:
+            cur.close(); db.close()
+            flash('User not found', 'warning')
+            return redirect(url_for('manager_users_page'))
+        
+        # If target is a manager, ensure we won't delete the last remaining manager
+        if user.get('role') == 'manager':
+            cur.execute("SELECT COUNT(*) as cnt FROM users WHERE role='manager'")
+            mgr_row = cur.fetchone()
+            try:
+                mgr_cnt = int(mgr_row.get('cnt', 0) if isinstance(mgr_row, dict) else (mgr_row[0] if mgr_row else 0))
+            except Exception:
+                mgr_cnt = 0
+        
+            if mgr_cnt <= 1:
+                cur.close(); db.close()
+                flash('Cannot delete the last remaining manager account', 'warning')
+                return redirect(url_for('manager_users_page'))
+        
+        try:
+            # First, nullify references from order_history.changed_by to avoid FK constraint
+            try:
+                cur.execute("UPDATE order_history SET changed_by = NULL WHERE changed_by = %s", (user_id,))
+            except Exception:
+                logging.debug('Could not nullify order_history.changed_by (may not exist or be nullable)')
+        
+            cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+            deleted = cur.rowcount
+            db.commit()
+        except mysql.connector.Error as db_err:
+            # If deletion still fails due to FK constraints, fall back to anonymize to preserve integrity
+            logging.warning(f"DB error deleting user {user_id}: {db_err}; attempting anonymize fallback")
+            try:
+                import time, uuid
+                from werkzeug.security import generate_password_hash
+                new_username = f"deleted_user_{user_id}_{int(time.time())}"
+                new_pw = generate_password_hash(uuid.uuid4().hex)
+                cur.execute("UPDATE users SET username=%s, role=%s, password_hash=%s WHERE id=%s",
+                            (new_username, 'disabled', new_pw, user_id))
+                db.commit()
+                cur.close(); db.close()
+                flash('User could not be deleted due to related records; account anonymized and disabled', 'warning')
+                return redirect(url_for('manager_users_page'))
+            except Exception:
+                logging.error(f"Anonymize fallback failed for user {user_id}: {traceback.format_exc()}")
+                cur.close(); db.close()
+                flash('Failed to delete user due to database constraints', 'danger')
+                return redirect(url_for('manager_users_page'))
+        
+        cur.close(); db.close()
+        logging.info(f"manager_users_delete deleted rows={deleted} for user_id={user_id}")
+        flash(f"Deleted user {user.get('username')}", 'success')
+        return redirect(url_for('manager_users_page'))
+    except Exception:
+        logging.error('Failed to delete user:\n' + traceback.format_exc())
+        flash('Failed to delete user', 'danger')
+        return redirect(url_for('manager_users_page'))
 
         db = get_db_connection()
         cur = db.cursor(dictionary=True)
@@ -702,14 +714,53 @@ def manager_users_delete(user_id):
             cur.close(); db.close()
             flash('User not found', 'warning')
             return redirect(url_for('manager_users_page'))
-        if user.get('role') == 'manager':
-            cur.close(); db.close()
-            flash('Cannot delete another manager', 'warning')
-            return redirect(url_for('manager_users_page'))
 
-        cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
-        db.commit()
+        # If target is a manager, ensure we won't delete the last remaining manager
+        if user.get('role') == 'manager':
+            cur.execute("SELECT COUNT(*) as cnt FROM users WHERE role='manager'")
+            mgr_row = cur.fetchone()
+            try:
+                mgr_cnt = int(mgr_row.get('cnt', 0) if isinstance(mgr_row, dict) else (mgr_row[0] if mgr_row else 0))
+            except Exception:
+                mgr_cnt = 0
+
+            if mgr_cnt <= 1:
+                cur.close(); db.close()
+                flash('Cannot delete the last remaining manager account', 'warning')
+                return redirect(url_for('manager_users_page'))
+
+        try:
+            # Attempt to cleanup all FK references to users.id (nullify or delete dependents), then delete user
+            try:
+                _cleanup_user_references(cur, db, user_id)
+            except Exception:
+                logging.debug('FK cleanup failed: ' + traceback.format_exc())
+
+            cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+            deleted = cur.rowcount
+            db.commit()
+        except mysql.connector.Error as db_err:
+            # If deletion still fails due to FK constraints, fall back to anonymize to preserve integrity
+            logging.warning(f"DB error deleting user {user_id}: {db_err}; attempting anonymize fallback")
+            try:
+                import time, uuid
+                from werkzeug.security import generate_password_hash
+                new_username = f"deleted_user_{user_id}_{int(time.time())}"
+                new_pw = generate_password_hash(uuid.uuid4().hex)
+                cur.execute("UPDATE users SET username=%s, role=%s, password_hash=%s WHERE id=%s",
+                            (new_username, 'disabled', new_pw, user_id))
+                db.commit()
+                cur.close(); db.close()
+                flash('User could not be deleted due to related records; account anonymized and disabled', 'warning')
+                return redirect(url_for('manager_users_page'))
+            except Exception:
+                logging.error(f"Anonymize fallback failed for user {user_id}: {traceback.format_exc()}")
+                cur.close(); db.close()
+                flash('Failed to delete user due to database constraints', 'danger')
+                return redirect(url_for('manager_users_page'))
+
         cur.close(); db.close()
+        logging.info(f"manager_users_delete deleted rows={deleted} for user_id={user_id}")
         flash(f"Deleted user {user.get('username')}", 'success')
         return redirect(url_for('manager_users_page'))
     except Exception:
@@ -724,6 +775,7 @@ def manager_users_delete(user_id):
 def api_manager_users_delete(user_id):
     """Delete a user from the users table. Prevent deleting self and other managers."""
     try:
+        logging.info(f"api_manager_users_delete called by user_id={session.get('user_id')} target_user_id={user_id} from {request.remote_addr}")
         # Prevent deleting self
         if session.get('user_id') == user_id:
             return jsonify({'error': 'cannot_delete_self'}), 400
@@ -732,29 +784,109 @@ def api_manager_users_delete(user_id):
         cur = db.cursor(dictionary=True)
         cur.execute("SELECT id, username, role FROM users WHERE id=%s", (user_id,))
         user = cur.fetchone()
+        logging.info(f"api_manager_users_delete fetched user: {user}")
         if not user:
             cur.close()
             db.close()
             return jsonify({'error': 'not_found'}), 404
 
-        # Prevent deleting another manager (keep at least managers safe)
+        # If deleting a manager, ensure we don't delete the last manager
         if user.get('role') == 'manager':
-            cur.close()
-            db.close()
-            return jsonify({'error': 'cannot_delete_manager'}), 403
+            cur.execute("SELECT COUNT(*) as cnt FROM users WHERE role='manager'")
+            mgr_cnt = cur.fetchone().get('cnt', 0)
+            if mgr_cnt <= 1:
+                cur.close(); db.close()
+                return jsonify({'error': 'cannot_delete_last_manager'}), 400
 
-        cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
-        db.commit()
-        cur.close()
-        db.close()
-        logging.info(f"Manager {session.get('username')} deleted user {user.get('username')} (id={user_id})")
-        return jsonify({'status': 'deleted'}), 200
+        try:
+            # Attempt to cleanup FK references (nullify or delete dependents) before deleting user
+            try:
+                _cleanup_user_references(cur, db, user_id)
+            except Exception:
+                logging.debug('FK cleanup failed: ' + traceback.format_exc())
+
+            cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+            deleted = cur.rowcount
+            db.commit()
+            cur.close(); db.close()
+            logging.info(f"Manager {session.get('username')} deleted user {user.get('username')} (id={user_id}), rows_deleted={deleted}")
+            return jsonify({'status': 'deleted', 'rows_deleted': deleted}), 200
+        except mysql.connector.Error as db_err:
+            logging.warning(f"DB error deleting user {user_id}: {db_err}; attempting anonymize fallback")
+            try:
+                import time, uuid
+                from werkzeug.security import generate_password_hash
+                new_username = f"deleted_user_{user_id}_{int(time.time())}"
+                new_pw = generate_password_hash(uuid.uuid4().hex)
+                cur.execute("UPDATE users SET username=%s, role=%s, password_hash=%s WHERE id=%s",
+                            (new_username, 'disabled', new_pw, user_id))
+                db.commit()
+                cur.close(); db.close()
+                logging.info(f"User {user_id} anonymized/disabled due to FK constraints")
+                return jsonify({'status': 'anonymized', 'id': user_id}), 200
+            except Exception:
+                logging.error(f"Anonymize fallback failed for user {user_id}: {traceback.format_exc()}")
+                cur.close(); db.close()
+                return jsonify({'error': 'cannot_delete'}), 500
     except Exception:
         logging.error('Failed to delete user:\n' + traceback.format_exc())
         return jsonify({'error': 'exception'}), 500
 
 
 # ----- MANAGER: Orders export and clear endpoints -----
+@app.route('/manager/delete_self', methods=['POST'])
+@login_required
+@role_required('manager')
+def manager_delete_self():
+    """Allow a logged-in manager to delete their own account after confirming password.
+    This will remove the user row, clear the session and redirect to the public index.
+    """
+    logging.info(f"manager_delete_self invoked by session user_id={session.get('user_id')} (type={type(session.get('user_id'))}) from {request.remote_addr}")
+    password = (request.form.get('password') or '').strip()
+    if not password:
+        flash('Password required to confirm account deletion', 'danger')
+        return redirect(url_for('dashboard', role='manager'))
+
+    try:
+        db = get_db_connection()
+        cur = db.cursor(dictionary=True)
+        cur.execute("SELECT id, username, password_hash FROM users WHERE id=%s", (session.get('user_id'),))
+        user = cur.fetchone()
+        logging.info(f"manager_delete_self fetched user from DB: {user}")
+        if not user:
+            cur.close(); db.close()
+            flash('User not found', 'warning')
+            return redirect(url_for('dashboard', role='manager'))
+
+        if not check_password_hash(user.get('password_hash', ''), password):
+            cur.close(); db.close()
+            flash('Invalid password', 'danger')
+            return redirect(url_for('dashboard', role='manager'))
+
+        # Attempt to cleanup dependent FK references then proceed to delete
+        try:
+            _cleanup_user_references(cur, db, user['id'])
+        except Exception:
+            logging.debug('FK cleanup failed during self-delete: ' + traceback.format_exc())
+
+        # Proceed to delete
+        cur.execute("DELETE FROM users WHERE id=%s", (user['id'],))
+        deleted_rows = cur.rowcount
+        db.commit()
+        cur.close(); db.close()
+
+        logging.info(f"Manager {user.get('username')} (id={user.get('id')}) deletion attempted, rows_deleted={deleted_rows}")
+        session.clear()
+        # If this was an AJAX request (fetch with X-Requested-With), respond with JSON
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'status': 'deleted', 'rows_deleted': deleted_rows}), 200
+
+        flash('Your account has been removed', 'success')
+        return redirect(url_for('index'))
+    except Exception:
+        logging.error('Failed to delete manager self account:\n' + traceback.format_exc())
+        flash('Failed to delete account', 'danger')
+        return redirect(url_for('dashboard', role='manager'))
 @app.route('/api/manager/orders/export', methods=['GET'])
 @login_required
 @role_required('manager')
@@ -882,7 +1014,13 @@ def _allowed_image(filename):
 @role_required('manager')
 def api_manager_menu_get():
     """Return the authored menu JSON for manager UI."""
+    logging.info(f"api_manager_menu_get invoked by user_id={session.get('user_id')} from {request.remote_addr}")
     menu = _load_menu()
+    try:
+        cats = len(menu.get('categories', []))
+    except Exception:
+        cats = 0
+    logging.info(f"api_manager_menu_get returning menu with {cats} categories")
     return jsonify(menu)
 
 
@@ -1052,6 +1190,31 @@ if DEBUG:
         cur.close()
         db.close()
         return "created", 201
+
+    @app.route('/debug/session', methods=['GET'])
+    def debug_session():
+        """Debug endpoint (debug-mode only) to return current session info."""
+        _require_debug()
+        try:
+            return jsonify({
+                'session': {k: session.get(k) for k in ['user_id', 'username', 'role']},
+                'cookies': dict(request.cookies),
+                'remote_addr': request.remote_addr
+            })
+        except Exception:
+            logging.error('debug_session failed:\n' + traceback.format_exc())
+            return jsonify({'error': 'exception'}), 500
+
+    @app.route('/debug/menu', methods=['GET'])
+    def debug_menu():
+        """Debug endpoint (debug-mode only) to return the authored menu JSON without auth."""
+        _require_debug()
+        try:
+            menu = _load_menu()
+            return jsonify(menu)
+        except Exception:
+            logging.error('debug_menu failed:\n' + traceback.format_exc())
+            return jsonify({'error': 'exception'}), 500
 
 # ----- ERROR HANDLING -----
 @app.errorhandler(404)
@@ -1628,9 +1791,6 @@ def emit_kpi_update(dashboard_type, kpi_data):
     }, room=dashboard_type)
 
 
-import json
-
-
 def _require_debug():
     """Helper to restrict admin diagnostics to debug mode only."""
     if not app.debug:
@@ -1665,6 +1825,46 @@ def get_table_schema(table_names):
             'default': coldef
         })
     return result
+
+
+def _cleanup_user_references(cur, db, user_id):
+    """Attempt to remove or nullify foreign-key references that point to users(id).
+    Strategy:
+      - Query information_schema for any columns referencing users(id).
+      - If the child column is nullable, SET it to NULL for rows matching the user_id.
+      - If the child column is NOT nullable, DELETE the dependent rows.
+    This is aggressive (may delete historical rows) but enables hard deletion of the
+    user row when requested. Each operation is best-effort and failures are logged.
+    """
+    try:
+        # Find all FK referencing users(id) in this database
+        cur.execute("""
+            SELECT k.TABLE_NAME as tbl, k.COLUMN_NAME as col, c.IS_NULLABLE as is_nullable
+            FROM information_schema.KEY_COLUMN_USAGE k
+            JOIN information_schema.COLUMNS c
+              ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME AND c.COLUMN_NAME = k.COLUMN_NAME
+            WHERE k.REFERENCED_TABLE_SCHEMA = %s
+              AND k.REFERENCED_TABLE_NAME = 'users'
+              AND k.REFERENCED_COLUMN_NAME = 'id'
+              AND k.TABLE_SCHEMA = %s
+        """, (DB_NAME, DB_NAME))
+        refs = cur.fetchall()
+        for r in refs:
+            try:
+                tbl = r['tbl'] if isinstance(r, dict) else r[0]
+                col = r['col'] if isinstance(r, dict) else r[1]
+                is_nullable = (r['is_nullable'] if isinstance(r, dict) else r[2]) or 'NO'
+                if str(is_nullable).upper() == 'YES':
+                    logging.info(f"Nullifying {tbl}.{col} for user {user_id}")
+                    cur.execute(f"UPDATE `{tbl}` SET `{col}` = NULL WHERE `{col}` = %s", (user_id,))
+                else:
+                    logging.info(f"Deleting dependent rows from {tbl} where {col}=%s", user_id)
+                    cur.execute(f"DELETE FROM `{tbl}` WHERE `{col}` = %s", (user_id,))
+            except Exception:
+                logging.warning(f"Failed to cleanup reference on {r}: {traceback.format_exc()}")
+        # Note: caller should commit when appropriate
+    except Exception:
+        logging.debug('Could not enumerate or cleanup FK references: ' + traceback.format_exc())
 
 
 @app.route('/admin/db_schema', methods=['GET'])
