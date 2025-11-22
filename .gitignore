@@ -1,4 +1,10 @@
+# local envs and logs
 venv/
+.env
+*.pyc
+__pycache__/
+error.log
+*.sqlite3venv/
 __pycache__/
 
 .env
