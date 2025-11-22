@@ -34,6 +34,80 @@ DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "11111111")
 DB_NAME = os.getenv("DB_NAME", "cafe_ca3")
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+from flask_socketio import SocketIO, emit, join_room, leave_room
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+import mysql.connector
+from functools import wraps
+from datetime import timedelta
+import os
+
+# ...existing code...
+
+# Single Flask app creation and environment-driven config (keep this before routes/extensions)
+app = Flask(__name__)
+
+# Basic environment-driven settings
+SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-for-local')
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('1', 'true', 'yes')
+FLASK_ENV = os.getenv('FLASK_ENV', 'production').lower()
+
+is_dev = FLASK_ENV in ('development', 'dev') or DEBUG
+
+# Core Flask settings
+app.config.update({
+    'SECRET_KEY': SECRET_KEY,
+    'DEBUG': DEBUG,
+    'ENV': FLASK_ENV,
+    'PROPAGATE_EXCEPTIONS': True,
+    'JSON_SORT_KEYS': False,
+    # Sessions/cookie security: override via env vars if needed
+    'SESSION_COOKIE_SECURE': False if is_dev else os.getenv('SESSION_COOKIE_SECURE', 'true').lower() in ('1','true','yes'),
+    'SESSION_COOKIE_SAMESITE': os.getenv('SESSION_COOKIE_SAMESITE', 'Lax'),
+    'PERMANENT_SESSION_LIFETIME': timedelta(
+        seconds=int(os.getenv('PERMANENT_SESSION_LIFETIME', str(60*60*24*7)))
+    )
+})
+
+# Upload settings for menu images
+app.config['MENU_IMAGE_FOLDER'] = os.path.join(app.root_path, 'static', 'images', 'menu')
+os.makedirs(app.config['MENU_IMAGE_FOLDER'], exist_ok=True)
+ALLOWED_IMAGE_EXT = {'.png', '.jpg', '.jpeg', '.svg', '.gif'}
+
+# Configure SocketIO (use DEBUG from env)
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    logger=DEBUG,
+    engineio_logger=DEBUG,
+    async_mode='threading'
+)
+
+import os
+from config import DevelopmentConfig, ProductionConfig
+
+app = Flask(__name__)
+env = os.getenv('FLASK_ENV', 'production').lower()
+app.config.from_object(DevelopmentConfig if env in ('development','dev') else ProductionConfig)
+# ensure secret is accessible as app.secret_key if you use it directly
+app.secret_key = app.config['SECRET_KEY']
+# ...existing code...
+import os
+from datetime import timedelta
+
+app = Flask(__name__)
+# ...existing code...
+
+# load secret and session settings from environment (fallbacks for local dev)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-for-local')
+is_dev = os.getenv('FLASK_ENV', '').lower() in ('development', 'dev') or os.getenv('DEBUG', '').lower() == 'true'
+app.config['SESSION_COOKIE_SECURE'] = False if is_dev else os.getenv('SESSION_COOKIE_SECURE', 'true').lower() == 'true'
+app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(
+    seconds=int(os.getenv('PERMANENT_SESSION_LIFETIME', str(60*60*24*7)))
+)
+# ...existing code...
 SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret_in_production")
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 FLASK_ENV = os.getenv("FLASK_ENV", "development")
