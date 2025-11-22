@@ -178,22 +178,28 @@
 
         <div class="action-buttons">
             <a href="{{ url_for('manager_create_user') }}" class="btn-primary">➕ Create New User</a>
-            <button id="manage-users-btn" class="btn-secondary">✏️ Manage Users</button>
+            <a href="{{ url_for('manager_users_page') }}" class="btn-secondary">✏️ Manage Users</a>
             <button id="manage-menu-btn" class="btn-primary" style="background:#ff8c00">🧾 Manage Menu</button>
             <button id="export-orders-btn" class="btn-secondary" style="background:#10b981">📊 Export Orders</button>
         </div>
 
-    <!-- Manage Users modal -->
-    <div id="users-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:600;align-items:center;justify-content:center"> 
-        <div style="background:white;width:720px;max-width:95%;max-height:80%;overflow:auto;border-radius:8px;padding:16px;position:relative">
+            <!-- server-rendered Manage Users and Create User pages used instead of JS modals -->
+    
+    <!-- Export Orders modal -->
+    <div id="export-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:615;align-items:center;justify-content:center">
+        <div style="background:white;width:420px;max-width:95%;border-radius:8px;padding:16px;position:relative">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                <h3 style="margin:0">Manage Users</h3>
-                <div>
-                    <button id="users-modal-close" class="btn-secondary" style="background:#6b7280">Close</button>
-                </div>
+                <h3 style="margin:0">Export Orders</h3>
+                <div><button id="export-close" class="btn-secondary" style="background:#6b7280">Close</button></div>
             </div>
-            <div style="margin-bottom:8px;color:#666;font-size:13px">List of users. You cannot delete yourself or other managers via this UI.</div>
-            <div id="users-list" style="max-height:520px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:6px;background:#fafafa">Loading users...</div>
+            <div style="margin-bottom:8px;color:#666;font-size:13px">Choose format and export a snapshot of orders. Large exports will take longer.</div>
+            <div style="margin-bottom:8px"><label>Format</label><br/>
+                <select id="export-format" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd"><option value="csv">CSV</option><option value="json">JSON</option></select>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+                <button id="export-start" class="btn-primary">Download</button>
+            </div>
+            <div id="export-msg" style="margin-top:8px;color:green"></div>
         </div>
     </div>
 
@@ -562,6 +568,8 @@
     </script>
     <script>
     // Manage Users modal script
+    // expose users list element to outer functions so fetchUsers() can update it
+    const usersListEl = document.getElementById('users-list')
     (function(){
         // ensure single binding by replacing node with a clone
         function bindOnce(id, handler){
@@ -575,7 +583,6 @@
 
         const usersModal = document.getElementById('users-modal')
         const usersClose = document.getElementById('users-modal-close')
-        const usersListEl = document.getElementById('users-list')
 
         function openUsersModal(){ usersModal.style.display = 'flex'; fetchUsers(); console.debug('openUsersModal') }
         function closeUsersModal(){ usersModal.style.display = 'none'; console.debug('closeUsersModal') }
@@ -606,8 +613,8 @@
         users.forEach(u=>{
             const disabled = (u.id === {{ session.user_id }} ) || u.role === 'manager'
             html += `<tr style="border-bottom:1px solid #eee"><td style="padding:8px">${u.username}</td><td style="padding:8px;text-align:center">${u.role}</td><td style="padding:8px;text-align:center">`+
-                    (disabled? '<span style="color:#999">Protected</span>' : `<button class="btn-secondary" onclick="deleteUser(${u.id}, '${u.username}')" style="background:#ef4444">Remove</button>`) +
-                    `</td></tr>`
+                (disabled? '<span style="color:#999">Protected</span>' : `<button class="btn-secondary" onclick="deleteUser(${u.id}, '${u.username}')" style="background:#ef4444">Remove</button>`) +
+                `</td></tr>`
         })
         html += '</tbody></table>'
         usersListEl.innerHTML = html
@@ -623,6 +630,34 @@
             fetchUsers()
         }catch(e){ console.error(e); alert('Delete failed') }
     }
+    
+    // Create user inline via API
+    (function(){
+        const openBtn = document.getElementById('open-create-user')
+        const modal = document.getElementById('create-user-modal')
+        const closeBtn = document.getElementById('create-user-close')
+        const submitBtn = document.getElementById('create-user-submit')
+        const msgEl = document.getElementById('create-user-msg')
+
+        if(openBtn) openBtn.addEventListener('click', ()=>{ modal.style.display='flex'; msgEl.textContent=''; document.getElementById('new-username').focus() })
+        if(closeBtn) closeBtn.addEventListener('click', ()=>{ modal.style.display='none' })
+
+        if(submitBtn) submitBtn.addEventListener('click', async ()=>{
+            const username = document.getElementById('new-username').value.trim()
+            const password = document.getElementById('new-password').value
+            const role = document.getElementById('new-role').value
+            if(!username||!password){ msgEl.style.color='red'; msgEl.textContent='Username and password required'; return }
+            msgEl.style.color='green'; msgEl.textContent='Creating user...'
+            try{
+                const res = await fetch('/api/manager/users', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({username,password,role}) })
+                const data = await res.json()
+                if(!res.ok){ msgEl.style.color='red'; msgEl.textContent = data.error || 'Create failed'; return }
+                msgEl.style.color='green'; msgEl.textContent='User created'
+                // refresh list and close modal after short delay
+                setTimeout(()=>{ modal.style.display='none'; fetchUsers() }, 700)
+            }catch(e){ console.error(e); msgEl.style.color='red'; msgEl.textContent='Create failed' }
+        })
+    })()
     </script>
     <script>
     // Export and Clear orders scripts (bound safely)
@@ -636,27 +671,34 @@
             return clone
         }
 
-        bindClickOnce('export-orders-btn', async ()=>{
-            console.debug('export-orders-btn clicked')
+        // open export modal
+        bindClickOnce('export-orders-btn', ()=>{ document.getElementById('export-modal').style.display = 'flex'; document.getElementById('export-msg').textContent=''; })
+
+        // export modal handlers
+        const exportClose = document.getElementById('export-close')
+        const exportStart = document.getElementById('export-start')
+        const exportFormat = document.getElementById('export-format')
+        const exportMsg = document.getElementById('export-msg')
+        if(exportClose) exportClose.addEventListener('click', ()=>{ document.getElementById('export-modal').style.display='none' })
+        if(exportStart) exportStart.addEventListener('click', async ()=>{
+            const fmt = exportFormat.value || 'csv'
+            exportMsg.style.color = 'green'; exportMsg.textContent = 'Preparing export...'
             try{
-                const fmt = prompt('Export format: csv or json?', 'csv')
-                if(!fmt) return
-                if(!['csv','json'].includes(fmt.toLowerCase())) { alert('Invalid format'); return }
-                const res = await fetch('/api/manager/orders/export?format='+fmt.toLowerCase())
+                const res = await fetch('/api/manager/orders/export?format='+fmt)
                 if(!res.ok) throw new Error('Export failed')
                 const blob = await res.blob()
                 const url = window.URL.createObjectURL(blob)
                 const a = document.createElement('a')
                 a.href = url
-                a.download = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g,'') || 'orders.'+fmt
+                a.download = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g,'') || `orders.${fmt}`
                 document.body.appendChild(a)
                 a.click()
                 window.URL.revokeObjectURL(url)
                 a.remove()
-                alert('Export started')
+                exportMsg.style.color = 'green'; exportMsg.textContent = 'Download started'
             }catch(e){
                 console.error(e)
-                alert('Export failed: '+e.message)
+                exportMsg.style.color = 'red'; exportMsg.textContent = 'Export failed: '+ (e.message || '')
             }
         })
 
@@ -767,23 +809,18 @@
         }catch(e){ console.error(e); formMsg.style.color='red'; formMsg.textContent='Save failed' }
     })
 
-    // simple delete from JSON (no endpoint): remove locally and save by sending a full update via API for the item id
+    // Delete menu item via backend endpoint so deletion persists to menu.json
     document.getElementById('menu-item-delete').addEventListener('click', async ()=>{
         const id = document.getElementById('form-id').value
         if(!id){ alert('No item selected to delete'); return }
         if(!confirm('Delete this item from menu.json? This cannot be undone via UI.')) return
-        // remove item from currentMenu then save entire menu file by reusing POST for existing items with minimal data
         try{
-            // remove item
-            for(const cat of (currentMenu.categories||[])){
-                const idx = (cat.items||[]).findIndex(i=>String(i.id)===String(id))
-                if(idx>=0){ cat.items.splice(idx,1); break }
-            }
-            // save whole menu by writing via backend helper: we'll POST a dummy item then call a special save endpoint? Simpler: call /api/manager/menu with PUT not available
-            // As a safe fallback, ask user to edit file directly if delete endpoint not available.
-            // Use fetch to call a lightweight endpoint to overwrite menu.json (not implemented). Inform user.
-            alert('Deleted locally. Please save via the server console or re-open modal to refresh. (Delete currently requires server-side save support)')
-            renderCategories()
+            const res = await fetch(`/api/manager/menu/item?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+            const data = await res.json()
+            if(!res.ok){ alert('Delete failed: ' + (data.error || 'unknown')); return }
+            formMsg.style.color = 'green'; formMsg.textContent = 'Deleted'
+            await fetchMenu()
+            clearForm()
         }catch(e){ console.error(e); alert('Delete failed') }
     })
     </script>

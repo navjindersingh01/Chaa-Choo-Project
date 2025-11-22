@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manage Users - Chaa Choo</title>
+  <style>
+    body{font-family:Segoe UI, Tahoma, sans-serif;padding:20px;background:#f7f7f7}
+    .card{background:#fff;padding:16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid #eee;text-align:left}
+    .btn{display:inline-block;padding:8px 12px;border-radius:6px;text-decoration:none;color:#fff}
+    .btn-primary{background:#28a745}
+    .btn-danger{background:#ef4444}
+    .btn-secondary{background:#6b7280}
+  </style>
+</head>
+<body>
+  <div style="max-width:1000px;margin:0 auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2>Manage Users</h2>
+      <div>
+        <a href="{{ url_for('manager_create_user') }}" class="btn btn-primary">➕ Create New User</a>
+        <a href="{{ url_for('dashboard', role='manager') }}" class="btn btn-secondary">↩ Back</a>
+      </div>
+    </div>
+    <div class="card">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div style="margin-bottom:12px">
+            {% for category, msg in messages %}
+              <div style="padding:8px;border-radius:6px;background:#f0f4f8;color:#0f172a;margin-bottom:6px">{{ msg }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <table>
+        <thead>
+          <tr><th>Username</th><th>Role</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+            <tr>
+              <td>{{ u.username }}</td>
+              <td>{{ u.role }}</td>
+              <td>
+                {% if u.id == session.user_id or u.role == 'manager' %}
+                  <span style="color:#999">Protected</span>
+                {% else %}
+                  <form method="post" action="{{ url_for('manager_users_delete', user_id=u.id) }}" style="display:inline" onsubmit="return confirm('Delete user {{ u.username }}?')">
+                    <button type="submit" class="btn btn-danger">Remove</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

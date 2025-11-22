@@ -556,6 +556,94 @@ def api_manager_users_list():
         return jsonify({'users': []}), 200
 
 
+@app.route('/api/manager/users', methods=['POST'])
+@login_required
+@role_required('manager')
+def api_manager_users_create():
+    """Create a new user via JSON body: {username, password, role} Returns JSON."""
+    try:
+        data = request.get_json() or {}
+        username = (data.get('username') or '').strip().lower()
+        password = data.get('password') or ''
+        role = data.get('role') or 'receptionist'
+
+        if not username or not password:
+            return jsonify({'error': 'username_and_password_required'}), 400
+        if role not in ('chief', 'receptionist', 'inventory', 'manager'):
+            return jsonify({'error': 'invalid_role'}), 400
+
+        pw_hash = generate_password_hash(password)
+        db = get_db_connection()
+        cur = db.cursor()
+        try:
+            cur.execute("INSERT INTO users (username, password_hash, role) VALUES (%s,%s,%s)",
+                        (username, pw_hash, role))
+            db.commit()
+            user_id = cur.lastrowid
+        except mysql.connector.errors.IntegrityError:
+            cur.close(); db.close()
+            return jsonify({'error': 'user_exists'}), 409
+
+        cur.close(); db.close()
+        return jsonify({'status': 'created', 'id': user_id, 'username': username, 'role': role}), 201
+    except Exception:
+        logging.error('Failed to create user:\n' + traceback.format_exc())
+        return jsonify({'error': 'exception'}), 500
+
+
+@app.route('/manager/users', methods=['GET'])
+@login_required
+@role_required('manager')
+def manager_users_page():
+    """Server-rendered users management page (no JS required)."""
+    try:
+        db = get_db_connection()
+        cur = db.cursor(dictionary=True)
+        cur.execute("SELECT id, username, role FROM users ORDER BY role, username")
+        users = cur.fetchall()
+        cur.close()
+        db.close()
+        return render_template('manager_users.html', users=users)
+    except Exception:
+        logging.error('Failed to render manager users page:\n' + traceback.format_exc())
+        flash('Failed to load users', 'danger')
+        return redirect(url_for('dashboard', role='manager'))
+
+
+@app.route('/manager/users/delete/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('manager')
+def manager_users_delete(user_id):
+    """Server-side deletion to avoid JS. Prevent deleting self or managers."""
+    try:
+        if session.get('user_id') == user_id:
+            flash('Cannot delete the currently logged-in user', 'warning')
+            return redirect(url_for('manager_users_page'))
+
+        db = get_db_connection()
+        cur = db.cursor(dictionary=True)
+        cur.execute("SELECT id, username, role FROM users WHERE id=%s", (user_id,))
+        user = cur.fetchone()
+        if not user:
+            cur.close(); db.close()
+            flash('User not found', 'warning')
+            return redirect(url_for('manager_users_page'))
+        if user.get('role') == 'manager':
+            cur.close(); db.close()
+            flash('Cannot delete another manager', 'warning')
+            return redirect(url_for('manager_users_page'))
+
+        cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+        db.commit()
+        cur.close(); db.close()
+        flash(f"Deleted user {user.get('username')}", 'success')
+        return redirect(url_for('manager_users_page'))
+    except Exception:
+        logging.error('Failed to delete user:\n' + traceback.format_exc())
+        flash('Failed to delete user', 'danger')
+        return redirect(url_for('manager_users_page'))
+
+
 @app.route('/api/manager/users/<int:user_id>', methods=['DELETE'])
 @login_required
 @role_required('manager')
@@ -724,6 +812,35 @@ def api_manager_menu_get():
     return jsonify(menu)
 
 
+@app.route('/api/manager/menu/item', methods=['DELETE'])
+@login_required
+@role_required('manager')
+def api_manager_menu_delete_item():
+    """Delete an item from the authored menu JSON by id.
+    Query param: id (int)
+    """
+    try:
+        item_id = request.args.get('id')
+        if not item_id:
+            return jsonify({'error': 'id_required'}), 400
+        menu = _load_menu()
+        removed = False
+        for cat in menu.get('categories', []):
+            before = len(cat.get('items', []))
+            cat['items'] = [it for it in cat.get('items', []) if str(it.get('id')) != str(item_id)]
+            if len(cat['items']) < before:
+                removed = True
+        if not removed:
+            return jsonify({'error': 'not_found'}), 404
+        ok = _save_menu(menu)
+        if not ok:
+            return jsonify({'error': 'save_failed'}), 500
+        return jsonify({'status': 'deleted'}), 200
+    except Exception:
+        logging.error('Failed to delete menu item:\n' + traceback.format_exc())
+        return jsonify({'error': 'exception'}), 500
+
+
 @app.route('/api/manager/menu/item', methods=['POST'])
 @login_required
 @role_required('manager')
@@ -832,32 +949,35 @@ def api_manager_menu_item():
 
 
 # ----- ADMIN / DEV: create a test user (one-off route) -----
-# Note: remove or protect this route in production. This is for initial setup convenience.
-@app.route('/dev/create_user', methods=['POST'])
-def dev_create_user():
-    """
-    POST form data: username, password, role
-    Use only in dev; comment out or remove before final submission.
-    """
-    username = request.form.get('username')
-    password = request.form.get('password')
-    role = request.form.get('role', 'receptionist')
-    if not username or not password:
-        return "username & password required", 400
-    pw_hash = generate_password_hash(password)
-    db = get_db_connection()
-    cur = db.cursor()
-    try:
-        cur.execute("INSERT INTO users (username, password_hash, role) VALUES (%s,%s,%s)",
-                    (username, pw_hash, role))
-        db.commit()
-    except mysql.connector.errors.IntegrityError:
+# NOTE: Only register the dev user creation route when running in debug mode.
+# This prevents accidental use in production. Use `scripts/setup_db.py` to create
+# initial users and data on the server instead.
+if DEBUG:
+    @app.route('/dev/create_user', methods=['POST'])
+    def dev_create_user():
+        """
+        POST form data: username, password, role
+        Development-only route: creates a user for testing when DEBUG is True.
+        """
+        username = request.form.get('username')
+        password = request.form.get('password')
+        role = request.form.get('role', 'receptionist')
+        if not username or not password:
+            return "username & password required", 400
+        pw_hash = generate_password_hash(password)
+        db = get_db_connection()
+        cur = db.cursor()
+        try:
+            cur.execute("INSERT INTO users (username, password_hash, role) VALUES (%s,%s,%s)",
+                        (username, pw_hash, role))
+            db.commit()
+        except mysql.connector.errors.IntegrityError:
+            cur.close()
+            db.close()
+            return "user exists", 400
         cur.close()
         db.close()
-        return "user exists", 400
-    cur.close()
-    db.close()
-    return "created", 201
+        return "created", 201
 
 # ----- ERROR HANDLING -----
 @app.errorhandler(404)

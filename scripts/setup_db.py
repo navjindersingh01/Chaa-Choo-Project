@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """
 Database setup script for Chaa Choo Café
-Creates tables and inserts test data
+Creates tables and inserts test data.
+
+This script is idempotent and PythonAnywhere-friendly:
+- It attempts to create the database when permitted.
+- If the DB user does not have permission to create databases (common on PA),
+    it will attempt to connect to the provided database and create tables there.
+Usage:
+    python3 scripts/setup_db.py [--seed-only]
 """
 
+import argparse
 import mysql.connector
 from werkzeug.security import generate_password_hash
 import os
+import sys
 
 # Load DB credentials from environment variables
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
@@ -82,6 +91,7 @@ def create_tables(cursor):
     """)
     print("✓ Created 'inventory' table")
 
+
 def insert_test_users(cursor):
     """Insert test users for different roles"""
     
@@ -103,6 +113,7 @@ def insert_test_users(cursor):
             print(f"✓ Created user: {username} (role: {role})")
         except mysql.connector.errors.IntegrityError:
             print(f"  ⚠ User {username} already exists, skipping...")
+
 
 def insert_sample_items(cursor):
     """Insert sample café items"""
@@ -151,45 +162,74 @@ def insert_sample_inventory(cursor):
     
     print(f"✓ Added inventory for {len(items)} items")
 
-def main():
-    """Main setup function"""
-    
+def main(seed_only=False):
+    """Main setup function. If `seed_only` is True, the script will not attempt to create the database and
+    will only insert seed data into the existing DB.
+    """
+
     print("\n" + "="*60)
     print("  🔧 Chaa Choo Database Setup")
     print("="*60 + "\n")
-    
+
     try:
-        # Connect to MySQL
-        db = mysql.connector.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASSWORD,
-        )
+        # Attempt to create the database if permissions allow (safe to run even when not allowed)
+        try:
+            admin_conn = mysql.connector.connect(
+                host=DB_HOST,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                autocommit=True,
+            )
+            admin_cursor = admin_conn.cursor()
+            try:
+                if not seed_only:
+                    admin_cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}`")
+                    print(f"✓ Database '{DB_NAME}' ready or already exists\n")
+            except mysql.connector.Error as create_err:
+                # Not fatal; may not have privileges (PythonAnywhere users commonly hit this)
+                print(f"⚠ Could not create database (may lack privileges): {create_err}")
+                print("⚠ Will attempt to connect to the provided database and create tables there.")
+            finally:
+                try:
+                    admin_cursor.close()
+                    admin_conn.close()
+                except Exception:
+                    pass
+        except mysql.connector.Error as conn_err:
+            print(f"\n❌ Cannot connect to MySQL server at {DB_HOST}: {conn_err}")
+            return False
+
+        # Connect to the target database
+        try:
+            db = mysql.connector.connect(
+                host=DB_HOST,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                database=DB_NAME,
+            )
+        except mysql.connector.Error as db_conn_err:
+            print(f"\n❌ Failed to connect to database '{DB_NAME}': {db_conn_err}")
+            print("If you're on PythonAnywhere, create the database from the Databases tab and then set DB_HOST, DB_USER, DB_NAME accordingly.")
+            return False
+
         cursor = db.cursor()
-        
-        # Create database if it doesn't exist
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
-        print(f"✓ Database '{DB_NAME}' ready\n")
-        
-        # Select the database
-        cursor.execute(f"USE {DB_NAME}")
-        
-        # Create tables
+
+        # Create tables (idempotent)
         print("Creating tables...")
         create_tables(cursor)
-        
-        print("\nInserting test users...")
-        insert_test_users(cursor)
-        
-        print("\nInserting sample items...")
-        insert_sample_items(cursor)
-        
-        print("\nSetting up inventory...")
-        insert_sample_inventory(cursor)
-        
-        # Commit changes
+
+        if not seed_only:
+            print("\nInserting test users...")
+            insert_test_users(cursor)
+
+            print("\nInserting sample items...")
+            insert_sample_items(cursor)
+
+            print("\nSetting up inventory...")
+            insert_sample_inventory(cursor)
+
         db.commit()
-        
+
         print("\n" + "="*60)
         print("  ✅ Database setup complete!")
         print("="*60)
@@ -200,22 +240,23 @@ def main():
         print("   Username: diana    | Password: password (Manager)")
         print("   Username: eve      | Password: password (Manager)")
         print("\n🔗 Access the app at: http://localhost:8080\n")
-        
+
         cursor.close()
         db.close()
-        
+
     except mysql.connector.Error as err:
         print(f"\n❌ Database Error: {err}")
-        print("\nMake sure MySQL is running:")
-        print("   macOS: brew services start mysql")
-        print("   Or: mysql.server start")
         return False
     except Exception as err:
         print(f"\n❌ Error: {err}")
         return False
-    
+
     return True
 
+
 if __name__ == '__main__':
-    success = main()
-    exit(0 if success else 1)
+    parser = argparse.ArgumentParser(description='Setup Chaa Choo database and seed sample data')
+    parser.add_argument('--seed-only', action='store_true', help='Only insert seed data; do not attempt to create the database')
+    args = parser.parse_args()
+    success = main(seed_only=args.seed_only)
+    sys.exit(0 if success else 1)
