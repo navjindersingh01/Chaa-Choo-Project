@@ -1452,16 +1452,26 @@ def create_order_api():
             price_row = cur.fetchone()
             if not price_row:
                 # Try to seed the item from authored menu.json before failing
+                seeded = False
                 try:
                     seeded = _seed_item_from_menu(item_id, cur, db)
+                    logging.info(f"Seed attempt for item {item_id}: {seeded}")
                 except Exception:
+                    logging.error(f"Seed attempt error for item {item_id}: {traceback.format_exc()}")
                     seeded = False
                 if seeded:
-                    cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
-                    price_row = cur.fetchone()
+                    try:
+                        cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
+                        price_row = cur.fetchone()
+                    except Exception:
+                        logging.error(f"Re-query after seeding failed for item {item_id}: {traceback.format_exc()}")
             if not price_row:
                 cur.close(); db.close()
-                return jsonify({'error': 'item_not_found', 'item_id': item_id}), 400
+                # Include debug hint about seeding attempt when in debug mode
+                resp = {'error': 'item_not_found', 'item_id': item_id}
+                if is_dev:
+                    resp['seed_attempted'] = seeded
+                return jsonify(resp), 400
             item_prices[item_id] = float(price_row.get('price') or 0.0)
 
         # Insert order (try extended columns, fallback to minimal if needed)
@@ -1555,16 +1565,25 @@ def create_public_order_api():
             cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
             price_row = cur.fetchone()
             if not price_row:
+                seeded = False
                 try:
                     seeded = _seed_item_from_menu(item_id, cur, db)
+                    logging.info(f"Seed attempt for public item {item_id}: {seeded}")
                 except Exception:
+                    logging.error(f"Seed attempt error for public item {item_id}: {traceback.format_exc()}")
                     seeded = False
                 if seeded:
-                    cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
-                    price_row = cur.fetchone()
+                    try:
+                        cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
+                        price_row = cur.fetchone()
+                    except Exception:
+                        logging.error(f"Re-query after seeding failed for public item {item_id}: {traceback.format_exc()}")
             if not price_row:
                 cur.close(); db.close()
-                return jsonify({'error': 'item_not_found', 'item_id': item_id}), 400
+                resp = {'error': 'item_not_found', 'item_id': item_id}
+                if is_dev:
+                    resp['seed_attempted'] = seeded
+                return jsonify(resp), 400
             item_prices[item_id] = float(price_row.get('price') or 0.0)
 
         try:

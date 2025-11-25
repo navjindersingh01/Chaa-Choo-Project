@@ -67,21 +67,68 @@ try:
 except Exception as e:
     print('Failed to count items:', e)
     cnt = 0
-
-if cnt == 0:
-    print('Seeding sample items...')
-    seed = [
-        ('Assam Tea', 49.00, 'Beverages'),
-        ('Masala Chai', 59.00, 'Beverages'),
-        ('Veg Sandwich', 99.00, 'Snacks')
-    ]
-    for name, price, cat in seed:
-        try:
-            cur.execute('INSERT INTO items (name, price, category) VALUES (%s,%s,%s)', (name, price, cat))
-        except Exception as e:
-            print('Insert failed for', name, e)
-    cnx.commit()
-    print('Inserted sample items.')
+# Attempt to seed items from authored data/menu.json (if any IDs missing)
+inserted = 0
+try:
+    # Locate authored menu relative to this script file (robust even if cwd differs)
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    menu_path = os.path.join(repo_root, 'data', 'menu.json')
+    if os.path.exists(menu_path):
+        print('Found authored menu at', menu_path, '— attempting to seed missing items from it')
+        total_menu_items = 0
+        with open(menu_path, 'r', encoding='utf-8') as f:
+            menu = json.load(f)
+        for cat in menu.get('categories', []):
+            cat_label = cat.get('label') or cat.get('id')
+            for it in cat.get('items', []):
+                total_menu_items += 1
+                try:
+                    mid = int(it.get('id'))
+                except Exception:
+                    mid = None
+                if not mid:
+                    continue
+                cur.execute('SELECT id FROM items WHERE id=%s', (mid,))
+                if cur.fetchone():
+                    continue
+                name = it.get('name') or f'Item {mid}'
+                price = float(it.get('price') or 0.0)
+                description = it.get('description') or None
+                image = it.get('image') or None
+                veg = 1 if it.get('veg', True) else 0
+                tags = ','.join(it.get('tags', [])) if isinstance(it.get('tags', []), list) else (it.get('tags') or None)
+                try:
+                    cur.execute(
+                        'INSERT INTO items (id, name, price, category, description, image, tags, veg) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)',
+                        (mid, name, price, cat_label, description, image, tags, veg)
+                    )
+                    inserted += 1
+                except Exception as e:
+                    print(f'Failed inserting item {mid}:', e)
+        print(f'Scanned {total_menu_items} authored menu items, attempting to insert missing ones...')
+        if inserted:
+            cnx.commit()
+            print(f'Inserted {inserted} items from menu.json')
+        else:
+            print('No missing authored items were inserted (menu items may already exist)')
+    else:
+        # Fallback seed if items table is empty and no authored menu exists
+        if cnt == 0:
+            print('No authored menu found and items table empty — seeding sample items...')
+            seed = [
+                ('Assam Tea', 49.00, 'Beverages'),
+                ('Masala Chai', 59.00, 'Beverages'),
+                ('Veg Sandwich', 99.00, 'Snacks')
+            ]
+            for name, price, cat in seed:
+                try:
+                    cur.execute('INSERT INTO items (name, price, category) VALUES (%s,%s,%s)', (name, price, cat))
+                except Exception as e:
+                    print('Insert failed for', name, e)
+            cnx.commit()
+            print('Inserted sample items.')
+except Exception as e:
+    print('Seeding from menu.json failed:', e)
 
 # Show items
 try:
