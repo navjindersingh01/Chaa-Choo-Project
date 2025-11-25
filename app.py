@@ -32,11 +32,36 @@ from werkzeug.utils import secure_filename
 import mysql.connector
 from functools import wraps
 
-# Read DB config from environment
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "11111111")
-DB_NAME = os.getenv("DB_NAME", "cafe_ca3")
+# Read DB config from environment. Support multiple common env var names and
+# a single DATABASE_URL value for convenience (mysql://user:pass@host/dbname).
+DB_HOST = os.getenv("DB_HOST")
+DB_USER = os.getenv("DB_USER")
+# Accept either DB_PASSWORD or DB_PASS
+DB_PASSWORD = os.getenv("DB_PASSWORD") or os.getenv("DB_PASS")
+DB_NAME = os.getenv("DB_NAME") or os.getenv('DATABASE_NAME')
+
+# If a DATABASE_URL is provided, parse it (format: mysql://user:pass@host/db)
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL:
+    try:
+        from urllib.parse import urlparse
+        p = urlparse(DATABASE_URL)
+        # p.scheme, p.username, p.password, p.hostname, p.path
+        if p.scheme and 'mysql' in p.scheme:
+            DB_USER = DB_USER or (p.username if p.username else DB_USER)
+            DB_PASSWORD = DB_PASSWORD or (p.password if p.password else DB_PASSWORD)
+            DB_HOST = DB_HOST or (p.hostname if p.hostname else DB_HOST)
+            # path starts with /dbname
+            if p.path:
+                DB_NAME = DB_NAME or p.path.lstrip('/')
+    except Exception:
+        logging.debug('Failed to parse DATABASE_URL: ' + traceback.format_exc())
+
+# Fallback defaults if still not set
+DB_HOST = DB_HOST or '127.0.0.1'
+DB_USER = DB_USER or 'root'
+DB_PASSWORD = DB_PASSWORD or os.getenv('MYSQL_PWD') or '11111111'
+DB_NAME = DB_NAME or 'cafe_ca3'
 
 # Create single Flask app instance
 app = Flask(__name__)
@@ -190,21 +215,28 @@ def login():
         try:
             db = get_db_connection()
             cur = db.cursor(dictionary=True)
-            cur.execute("SELECT id, username, password_hash, role FROM users WHERE username=%s", (username,))
+            # Use case-insensitive username lookup to avoid mismatches from casing
+            cur.execute("SELECT id, username, password_hash, role FROM users WHERE LOWER(username)=%s", (username.lower(),))
             user = cur.fetchone()
             cur.close()
             db.close()
-            
+
             if user:
-                logging.info(f"User {username} found in database")
-                password_match = check_password_hash(user['password_hash'], password)
+                logging.info(f"User lookup succeeded for username (normalized): {username}")
+                # Be defensive: ensure password_hash is a string before passing to check_password_hash
+                pw_hash = user.get('password_hash') or ''
+                try:
+                    password_match = check_password_hash(pw_hash, password)
+                except Exception:
+                    logging.error(f"Password hash check failed for user {username}: {traceback.format_exc()}")
+                    password_match = False
                 logging.info(f"Password match result: {password_match}")
 
                 if password_match:
                     session['user_id'] = user['id']
                     session['username'] = user['username']
                     # Normalize legacy 'stakeholder' role into 'manager'
-                    normalized_role = 'manager' if user['role'] == 'stakeholder' else user['role']
+                    normalized_role = 'manager' if user.get('role') == 'stakeholder' else user.get('role')
                     session['role'] = normalized_role
                     logging.info(f"User {username} logged in successfully with role: {normalized_role}")
                     return redirect(url_for('dashboard', role=normalized_role))
@@ -487,35 +519,93 @@ def create_order():
     db = get_db_connection()
     cur = db.cursor()
 
-    # fetch item prices and costs
-    item_ids = tuple(set([int(i['item_id']) for i in items]))
-    format_ids = "(" + ",".join(["%s"] * len(item_ids)) + ")"
-    cur.execute(f"SELECT id, price FROM items WHERE id IN {format_ids}", item_ids)
-    price_map = {row[0]: float(row[1]) for row in cur.fetchall()}
+    try:
+        # Build list of unique item IDs requested
+        try:
+            item_ids_list = [int(i['item_id']) for i in items]
+        except Exception:
+            return jsonify({'error': 'invalid_item_id'}), 400
 
-    total = 0.0
-    for it in items:
-        total += price_map.get(int(it['item_id']), 0.0) * int(it.get('qty', 1))
+        uniq_ids = list(dict.fromkeys(item_ids_list))
+        if not uniq_ids:
+            return jsonify({'error': 'no_items_provided'}), 400
 
-    # create order
-    cur.execute("INSERT INTO orders (order_time, total_amount, cashier, status) VALUES (%s,%s,%s,%s)",
-                (datetime.now(), total, cashier, 'new'))
-    order_id = cur.lastrowid
+        # Query prices for all requested items
+        placeholders = ','.join(['%s'] * len(uniq_ids))
+        cur.execute(f"SELECT id, price FROM items WHERE id IN ({placeholders})", tuple(uniq_ids))
+        rows = cur.fetchall()
+        price_map = {row[0]: float(row[1]) for row in rows}
 
-    # insert order items
-    for it in items:
-        cur.execute("INSERT INTO order_items (order_id, item_id, qty, price) VALUES (%s,%s,%s,%s)",
-                    (order_id, int(it['item_id']), int(it.get('qty', 1)), price_map.get(int(it['item_id']), 0.0)))
+        # Detect missing items
+        missing = [i for i in uniq_ids if i not in price_map]
+        if missing:
+            cur.close(); db.close()
+            return jsonify({'error': 'item_not_found', 'missing': missing}), 400
 
-    # Optionally set status to 'served' if simulated payment succeeded
-    status = 'served' if simulate_payment else 'new'
-    cur.execute("UPDATE orders SET status=%s WHERE id=%s", (status, order_id))
+        # Compute total using fetched prices and requested quantities
+        total = 0.0
+        for it in items:
+            iid = int(it['item_id'])
+            qty = int(it.get('qty', 1))
+            total += price_map.get(iid, 0.0) * qty
 
-    db.commit()
-    cur.close()
-    db.close()
+        # Start transactional insert
+        # Insert order
+        cur.execute("INSERT INTO orders (order_time, total_amount, cashier, status) VALUES (%s,%s,%s,%s)",
+                    (datetime.now(), total, cashier, 'new'))
+        order_id = cur.lastrowid
 
-    return jsonify({"order_id": order_id, "total": total, "status": status}), 201
+        # Insert order items
+        for it in items:
+            iid = int(it['item_id'])
+            qty = int(it.get('qty', 1))
+            price = price_map.get(iid, 0.0)
+            cur.execute("INSERT INTO order_items (order_id, item_id, qty, price) VALUES (%s,%s,%s,%s)",
+                        (order_id, iid, qty, price))
+
+        # Insert initial history record (best-effort)
+        try:
+            cur.execute("INSERT INTO order_history (order_id, old_status, new_status, changed_by, notes) VALUES (%s,%s,%s,%s,%s)",
+                        (order_id, None, 'new', session.get('user_id'), f'Order created by {cashier}'))
+        except Exception:
+            logging.debug('order_history insert skipped or failed: ' + traceback.format_exc())
+
+        # Optionally update inventory quantities if inventory schema supports item_id/quantity
+        try:
+            schema = get_table_schema(['inventory'])
+            inv_cols = [c['column'] for c in (schema.get('inventory') or [])]
+            if 'item_id' in inv_cols and 'quantity' in inv_cols:
+                for it in items:
+                    iid = int(it['item_id'])
+                    qty = int(it.get('qty', 1))
+                    try:
+                        cur.execute("UPDATE inventory SET quantity = GREATEST(0, quantity - %s) WHERE item_id = %s", (qty, iid))
+                    except Exception:
+                        logging.debug('Failed to update inventory for item %s: %s' % (iid, traceback.format_exc()))
+        except Exception:
+            logging.debug('Inventory update skipped: ' + traceback.format_exc())
+
+        # Set final status if payment simulated
+        status = 'served' if simulate_payment else 'new'
+        cur.execute("UPDATE orders SET status=%s WHERE id=%s", (status, order_id))
+
+        db.commit()
+        cur.close()
+        db.close()
+
+        return jsonify({"order_id": order_id, "total": total, "status": status}), 201
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logging.error('Order creation failed: ' + traceback.format_exc())
+        try:
+            cur.close()
+            db.close()
+        except Exception:
+            pass
+        return jsonify({'error': 'order_creation_failed', 'details': str(e)}), 500
 
 
 # ----- MANAGER: create user UI -----
@@ -982,6 +1072,57 @@ def api_manager_orders_export():
 def _menu_json_path():
     return os.path.join(app.root_path, 'data', 'menu.json')
 
+
+def _seed_item_from_menu(item_id, cur, db):
+    """If an authored menu.json contains an item with the given id, insert it
+    into the `items` table so orders referencing authored IDs work.
+    Returns True if an insert happened, False otherwise.
+    """
+    try:
+        p = _menu_json_path()
+        if not os.path.exists(p):
+            return False
+        with open(p, 'r', encoding='utf-8') as f:
+            menu = json.load(f)
+
+        # Search for matching id in menu categories
+        for cat in menu.get('categories', []):
+            for it in cat.get('items', []):
+                try:
+                    mid = int(it.get('id'))
+                except Exception:
+                    mid = None
+                if mid == int(item_id):
+                    # Insert into items table if not already present
+                    name = it.get('name') or f'Item {item_id}'
+                    price = float(it.get('price') or 0.0)
+                    category = cat.get('label') or cat.get('id')
+                    description = it.get('description') or None
+                    image = it.get('image') or None
+                    veg = 1 if it.get('veg', True) else 0
+                    tags = ','.join(it.get('tags', [])) if isinstance(it.get('tags', []), list) else (it.get('tags') or None)
+                    try:
+                        cur.execute("SELECT id FROM items WHERE id=%s", (mid,))
+                        if cur.fetchone():
+                            return True
+                        cur.execute(
+                            "INSERT INTO items (id, name, price, category, description, image, tags, veg) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                            (mid, name, price, category, description, image, tags, veg)
+                        )
+                        db.commit()
+                        return True
+                    except Exception:
+                        logging.debug('Failed to seed item from menu: ' + traceback.format_exc())
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
+                        return False
+        return False
+    except Exception:
+        logging.debug('Seed-from-menu failed: ' + traceback.format_exc())
+        return False
+
 def _load_menu():
     p = _menu_json_path()
     if not os.path.exists(p):
@@ -1298,25 +1439,32 @@ def create_order_api():
         db = get_db_connection()
         cur = db.cursor(dictionary=True)
 
-        # Fetch all item prices first (before any inserts)
+        # Fetch and validate all item prices first (before any inserts)
         item_prices = {}
         for item in items:
-            item_id = int(item['item_id'])
-            price_cur = db.cursor(dictionary=True)
-            price_cur.execute("SELECT price FROM items WHERE id=%s", (item_id,))
-            price_row = price_cur.fetchone()
-            price_cur.close()
-            item_prices[item_id] = float(price_row['price']) if price_row else 0.0
+            try:
+                item_id = int(item['item_id'])
+            except Exception:
+                cur.close(); db.close()
+                return jsonify({'error': 'invalid_item_id', 'item': item.get('item_id')}), 400
 
-        # Insert order
-        cur.execute("""
-            INSERT INTO orders (customer_name, type, total_amount, status, priority, customer_notes, order_time)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (customer_name, order_type, total_amount, 'queued', priority, customer_notes, datetime.now()))
-        
-        order_id = cur.lastrowid
+            cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
+            price_row = cur.fetchone()
+            if not price_row:
+                # Try to seed the item from authored menu.json before failing
+                try:
+                    seeded = _seed_item_from_menu(item_id, cur, db)
+                except Exception:
+                    seeded = False
+                if seeded:
+                    cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
+                    price_row = cur.fetchone()
+            if not price_row:
+                cur.close(); db.close()
+                return jsonify({'error': 'item_not_found', 'item_id': item_id}), 400
+            item_prices[item_id] = float(price_row.get('price') or 0.0)
 
-        # Try inserting order with extended columns (if migrations applied)
+        # Insert order (try extended columns, fallback to minimal if needed)
         try:
             cur.execute("""
                 INSERT INTO orders (customer_name, type, total_amount, status, priority, customer_notes, order_time)
@@ -1324,7 +1472,7 @@ def create_order_api():
             """, (customer_name, order_type, total_amount, 'queued', priority, customer_notes, datetime.now()))
             order_id = cur.lastrowid
 
-            # Insert order items (with modifiers / item_status if available)
+            # Insert order items (attempt extended insert, fallback if columns missing)
             for item in items:
                 modifiers = json.dumps(item.get('modifiers', []))
                 item_id = int(item['item_id'])
@@ -1336,27 +1484,23 @@ def create_order_api():
                         VALUES (%s, %s, %s, %s, %s, %s)
                     """, (order_id, item_id, qty, item_price, modifiers, 'queued'))
                 except mysql.connector.Error:
-                    # Fallback if order_items doesn't have modifiers/item_status/price columns
-                    cur.execute("""
-                        INSERT INTO order_items (order_id, item_id, qty, price)
-                        VALUES (%s, %s, %s, %s)
-                    """, (order_id, item_id, qty, item_price))
+                    cur.execute("INSERT INTO order_items (order_id, item_id, qty, price) VALUES (%s,%s,%s,%s)",
+                                (order_id, item_id, qty, item_price))
 
         except mysql.connector.Error as ex:
             # If extended columns do not exist yet, fall back to minimal schema inserts
-            logging.warning(f"Extended order insert failed, falling back to minimal schema: {ex}")
-            # Try minimal insert into orders (order_time, total_amount, cashier, status)
+            logging.warning(f"Order insert failed, falling back to minimal schema: {ex}")
             cur.execute("INSERT INTO orders (order_time, total_amount, cashier, status) VALUES (%s,%s,%s,%s)",
                         (datetime.now(), total_amount, session.get('username', 'walkin'), 'queued'))
             order_id = cur.lastrowid
-
-            # Insert order items with minimal columns (order_id, item_id, qty, price)
             for item in items:
                 item_id = int(item['item_id'])
                 qty = int(item.get('qty', 1))
                 item_price = item_prices.get(item_id, 0.0)
                 cur.execute("INSERT INTO order_items (order_id, item_id, qty, price) VALUES (%s,%s,%s,%s)",
                             (order_id, item_id, qty, item_price))
+
+        db.commit()
         emit_order_update(order_id, {
             'customer_name': customer_name,
             'items_count': len(items),
@@ -1364,7 +1508,8 @@ def create_order_api():
             'type': order_type,
             'status': 'queued'
         }, 'new_order')
-        
+
+        cur.close(); db.close()
         return jsonify({
             "order_id": order_id,
             "status": "queued",
@@ -1398,17 +1543,30 @@ def create_public_order_api():
         db = get_db_connection()
         cur = db.cursor(dictionary=True)
 
-        # Fetch item prices
+        # Fetch and validate item prices
         item_prices = {}
         for item in items:
-            item_id = int(item['item_id'])
-            price_cur = db.cursor(dictionary=True)
-            price_cur.execute("SELECT price FROM items WHERE id=%s", (item_id,))
-            price_row = price_cur.fetchone()
-            price_cur.close()
-            item_prices[item_id] = float(price_row['price']) if price_row else 0.0
+            try:
+                item_id = int(item['item_id'])
+            except Exception:
+                cur.close(); db.close()
+                return jsonify({'error': 'invalid_item_id', 'item': item.get('item_id')}), 400
 
-        # Try extended insert first
+            cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
+            price_row = cur.fetchone()
+            if not price_row:
+                try:
+                    seeded = _seed_item_from_menu(item_id, cur, db)
+                except Exception:
+                    seeded = False
+                if seeded:
+                    cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
+                    price_row = cur.fetchone()
+            if not price_row:
+                cur.close(); db.close()
+                return jsonify({'error': 'item_not_found', 'item_id': item_id}), 400
+            item_prices[item_id] = float(price_row.get('price') or 0.0)
+
         try:
             cur.execute("""
                 INSERT INTO orders (customer_name, type, total_amount, status, priority, customer_notes, order_time)
@@ -1432,7 +1590,6 @@ def create_public_order_api():
 
         except mysql.connector.Error as ex:
             logging.warning(f"Extended public order insert failed, falling back: {ex}")
-            # minimal fallback
             cur.execute("INSERT INTO orders (order_time, total_amount, cashier, status) VALUES (%s,%s,%s,%s)",
                         (datetime.now(), total_amount, 'public', 'queued'))
             order_id = cur.lastrowid
