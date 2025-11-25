@@ -1,24 +1,26 @@
-"""
-WSGI entry point for production deployment
-This file is used by Gunicorn to launch the Flask application
-"""
-
+# ...existing code...
 import os
 import sys
-from dotenv import load_dotenv
+from pathlib import Path
 
-# Load environment variables from .env.production
-load_dotenv('.env.production')
+project_home = Path(__file__).resolve().parent
+if str(project_home) not in sys.path:
+    sys.path.insert(0, str(project_home))
 
-# Add the application directory to the path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Load a server-only .env when present (do NOT commit .env to git)
+env_path = project_home / ".env"
+if env_path.exists():
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=str(env_path))
 
-from app import app, socketio
+# Import the Flask app object and expose as 'application'
+# If your Flask object is named differently, change the import below.
+from app import app as application
 
-# Ensure production settings
-app.config['ENV'] = 'production'
-app.config['DEBUG'] = False
+# ensure production defaults
+application.config.setdefault('ENV', 'production')
+application.config.setdefault('DEBUG', False)
 
-if __name__ == '__main__':
-    # This is only for local testing, production uses Gunicorn
-    socketio.run(app, host='0.0.0.0', port=5000)
+# IMPORTANT: do not call socketio.run() or start servers here.
+# PythonAnywhere runs the WSGI app for you.
+# ...existing code...

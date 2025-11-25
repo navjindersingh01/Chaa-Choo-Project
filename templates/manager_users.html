@@ -45,7 +45,7 @@
               <td>{{ u.username }}</td>
               <td>{{ u.role }}</td>
               <td>
-                {% if u.id == session.user_id or u.role == 'manager' %}
+                {% if u.id == session.user_id %}
                   <span style="color:#999">Protected</span>
                 {% else %}
                   <form method="post" action="{{ url_for('manager_users_delete', user_id=u.id) }}" style="display:inline" onsubmit="return confirm('Delete user {{ u.username }}?')">

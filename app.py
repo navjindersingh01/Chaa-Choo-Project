@@ -1,3 +1,4 @@
+# Consolidated imports and app/config initialization
 import traceback
 import logging
 import os
@@ -10,16 +11,20 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 load_dotenv()
 
+# Basic runtime flags
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('1', 'true', 'yes')
+FLASK_ENV = os.getenv('FLASK_ENV', 'production').lower()
+is_dev = FLASK_ENV in ('development', 'dev') or DEBUG
+
 # Configure logging
 log_file = os.getenv("LOG_FILE", "error.log")
-log_level = logging.DEBUG if os.getenv("DEBUG", "False").lower() == "true" else logging.INFO
+log_level = logging.DEBUG if DEBUG else logging.INFO
 logging.basicConfig(
     filename=log_file,
     level=log_level,
     format='%(asctime)s %(levelname)s: %(message)s'
 )
 
-# app.py
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -27,23 +32,66 @@ from werkzeug.utils import secure_filename
 import mysql.connector
 from functools import wraps
 
+# Read DB config from environment. Support multiple common env var names and
+# a single DATABASE_URL value for convenience (mysql://user:pass@host/dbname).
+DB_HOST = os.getenv("DB_HOST")
+DB_USER = os.getenv("DB_USER")
+# Accept either DB_PASSWORD or DB_PASS
+DB_PASSWORD = os.getenv("DB_PASSWORD") or os.getenv("DB_PASS")
+DB_NAME = os.getenv("DB_NAME") or os.getenv('DATABASE_NAME')
 
-# ----- CONFIG -----
-# Read all configuration from environment variables
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "11111111")
-DB_NAME = os.getenv("DB_NAME", "cafe_ca3")
-SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret_in_production")
-DEBUG = os.getenv("DEBUG", "False").lower() == "true"
-FLASK_ENV = os.getenv("FLASK_ENV", "development")
+# If a DATABASE_URL is provided, parse it (format: mysql://user:pass@host/db)
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL:
+    try:
+        from urllib.parse import urlparse
+        p = urlparse(DATABASE_URL)
+        # p.scheme, p.username, p.password, p.hostname, p.path
+        if p.scheme and 'mysql' in p.scheme:
+            DB_USER = DB_USER or (p.username if p.username else DB_USER)
+            DB_PASSWORD = DB_PASSWORD or (p.password if p.password else DB_PASSWORD)
+            DB_HOST = DB_HOST or (p.hostname if p.hostname else DB_HOST)
+            # path starts with /dbname
+            if p.path:
+                DB_NAME = DB_NAME or p.path.lstrip('/')
+    except Exception:
+        logging.debug('Failed to parse DATABASE_URL: ' + traceback.format_exc())
 
+# Fallback defaults if still not set
+DB_HOST = DB_HOST or '127.0.0.1'
+DB_USER = DB_USER or 'root'
+DB_PASSWORD = DB_PASSWORD or os.getenv('MYSQL_PWD') or '11111111'
+DB_NAME = DB_NAME or 'cafe_ca3'
+
+# Create single Flask app instance
 app = Flask(__name__)
-app.secret_key = SECRET_KEY
-app.config['DEBUG'] = DEBUG
-app.config['ENV'] = FLASK_ENV
-app.config['PROPAGATE_EXCEPTIONS'] = True
-app.config['JSON_SORT_KEYS'] = False
+
+# Load environment-driven settings
+app.config.update({
+    'SECRET_KEY': os.getenv('SECRET_KEY', 'dev-secret-for-local'),
+    'DEBUG': DEBUG,
+    'ENV': FLASK_ENV,
+    'PROPAGATE_EXCEPTIONS': True,
+    'JSON_SORT_KEYS': False,
+    'SESSION_COOKIE_SECURE': False if is_dev else os.getenv('SESSION_COOKIE_SECURE', 'true').lower() in ('1','true','yes'),
+    'SESSION_COOKIE_SAMESITE': os.getenv('SESSION_COOKIE_SAMESITE', 'Lax'),
+    'PERMANENT_SESSION_LIFETIME': timedelta(
+        seconds=int(os.getenv('PERMANENT_SESSION_LIFETIME', str(60*60*24*7)))
+    )
+})
+
+# Attempt to apply config classes from config.py if present
+try:
+    from config import DevelopmentConfig, ProductionConfig
+    cfg = DevelopmentConfig if FLASK_ENV in ('development', 'dev') else ProductionConfig
+    app.config.from_object(cfg)
+except Exception:
+    # keep env-driven config if config module isn't available
+    logging.debug('config.py not loaded; using environment-driven config')
+
+# Ensure secret is set on app
+app.secret_key = app.config.get('SECRET_KEY', app.secret_key)
+
 # Upload settings for menu images
 app.config['MENU_IMAGE_FOLDER'] = os.path.join(app.root_path, 'static', 'images', 'menu')
 os.makedirs(app.config['MENU_IMAGE_FOLDER'], exist_ok=True)
@@ -167,21 +215,28 @@ def login():
         try:
             db = get_db_connection()
             cur = db.cursor(dictionary=True)
-            cur.execute("SELECT id, username, password_hash, role FROM users WHERE username=%s", (username,))
+            # Use case-insensitive username lookup to avoid mismatches from casing
+            cur.execute("SELECT id, username, password_hash, role FROM users WHERE LOWER(username)=%s", (username.lower(),))
             user = cur.fetchone()
             cur.close()
             db.close()
-            
+
             if user:
-                logging.info(f"User {username} found in database")
-                password_match = check_password_hash(user['password_hash'], password)
+                logging.info(f"User lookup succeeded for username (normalized): {username}")
+                # Be defensive: ensure password_hash is a string before passing to check_password_hash
+                pw_hash = user.get('password_hash') or ''
+                try:
+                    password_match = check_password_hash(pw_hash, password)
+                except Exception:
+                    logging.error(f"Password hash check failed for user {username}: {traceback.format_exc()}")
+                    password_match = False
                 logging.info(f"Password match result: {password_match}")
 
                 if password_match:
                     session['user_id'] = user['id']
                     session['username'] = user['username']
                     # Normalize legacy 'stakeholder' role into 'manager'
-                    normalized_role = 'manager' if user['role'] == 'stakeholder' else user['role']
+                    normalized_role = 'manager' if user.get('role') == 'stakeholder' else user.get('role')
                     session['role'] = normalized_role
                     logging.info(f"User {username} logged in successfully with role: {normalized_role}")
                     return redirect(url_for('dashboard', role=normalized_role))
@@ -464,35 +519,93 @@ def create_order():
     db = get_db_connection()
     cur = db.cursor()
 
-    # fetch item prices and costs
-    item_ids = tuple(set([int(i['item_id']) for i in items]))
-    format_ids = "(" + ",".join(["%s"] * len(item_ids)) + ")"
-    cur.execute(f"SELECT id, price FROM items WHERE id IN {format_ids}", item_ids)
-    price_map = {row[0]: float(row[1]) for row in cur.fetchall()}
+    try:
+        # Build list of unique item IDs requested
+        try:
+            item_ids_list = [int(i['item_id']) for i in items]
+        except Exception:
+            return jsonify({'error': 'invalid_item_id'}), 400
 
-    total = 0.0
-    for it in items:
-        total += price_map.get(int(it['item_id']), 0.0) * int(it.get('qty', 1))
+        uniq_ids = list(dict.fromkeys(item_ids_list))
+        if not uniq_ids:
+            return jsonify({'error': 'no_items_provided'}), 400
 
-    # create order
-    cur.execute("INSERT INTO orders (order_time, total_amount, cashier, status) VALUES (%s,%s,%s,%s)",
-                (datetime.now(), total, cashier, 'new'))
-    order_id = cur.lastrowid
+        # Query prices for all requested items
+        placeholders = ','.join(['%s'] * len(uniq_ids))
+        cur.execute(f"SELECT id, price FROM items WHERE id IN ({placeholders})", tuple(uniq_ids))
+        rows = cur.fetchall()
+        price_map = {row[0]: float(row[1]) for row in rows}
 
-    # insert order items
-    for it in items:
-        cur.execute("INSERT INTO order_items (order_id, item_id, qty, price) VALUES (%s,%s,%s,%s)",
-                    (order_id, int(it['item_id']), int(it.get('qty', 1)), price_map.get(int(it['item_id']), 0.0)))
+        # Detect missing items
+        missing = [i for i in uniq_ids if i not in price_map]
+        if missing:
+            cur.close(); db.close()
+            return jsonify({'error': 'item_not_found', 'missing': missing}), 400
 
-    # Optionally set status to 'served' if simulated payment succeeded
-    status = 'served' if simulate_payment else 'new'
-    cur.execute("UPDATE orders SET status=%s WHERE id=%s", (status, order_id))
+        # Compute total using fetched prices and requested quantities
+        total = 0.0
+        for it in items:
+            iid = int(it['item_id'])
+            qty = int(it.get('qty', 1))
+            total += price_map.get(iid, 0.0) * qty
 
-    db.commit()
-    cur.close()
-    db.close()
+        # Start transactional insert
+        # Insert order
+        cur.execute("INSERT INTO orders (order_time, total_amount, cashier, status) VALUES (%s,%s,%s,%s)",
+                    (datetime.now(), total, cashier, 'new'))
+        order_id = cur.lastrowid
 
-    return jsonify({"order_id": order_id, "total": total, "status": status}), 201
+        # Insert order items
+        for it in items:
+            iid = int(it['item_id'])
+            qty = int(it.get('qty', 1))
+            price = price_map.get(iid, 0.0)
+            cur.execute("INSERT INTO order_items (order_id, item_id, qty, price) VALUES (%s,%s,%s,%s)",
+                        (order_id, iid, qty, price))
+
+        # Insert initial history record (best-effort)
+        try:
+            cur.execute("INSERT INTO order_history (order_id, old_status, new_status, changed_by, notes) VALUES (%s,%s,%s,%s,%s)",
+                        (order_id, None, 'new', session.get('user_id'), f'Order created by {cashier}'))
+        except Exception:
+            logging.debug('order_history insert skipped or failed: ' + traceback.format_exc())
+
+        # Optionally update inventory quantities if inventory schema supports item_id/quantity
+        try:
+            schema = get_table_schema(['inventory'])
+            inv_cols = [c['column'] for c in (schema.get('inventory') or [])]
+            if 'item_id' in inv_cols and 'quantity' in inv_cols:
+                for it in items:
+                    iid = int(it['item_id'])
+                    qty = int(it.get('qty', 1))
+                    try:
+                        cur.execute("UPDATE inventory SET quantity = GREATEST(0, quantity - %s) WHERE item_id = %s", (qty, iid))
+                    except Exception:
+                        logging.debug('Failed to update inventory for item %s: %s' % (iid, traceback.format_exc()))
+        except Exception:
+            logging.debug('Inventory update skipped: ' + traceback.format_exc())
+
+        # Set final status if payment simulated
+        status = 'served' if simulate_payment else 'new'
+        cur.execute("UPDATE orders SET status=%s WHERE id=%s", (status, order_id))
+
+        db.commit()
+        cur.close()
+        db.close()
+
+        return jsonify({"order_id": order_id, "total": total, "status": status}), 201
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logging.error('Order creation failed: ' + traceback.format_exc())
+        try:
+            cur.close()
+            db.close()
+        except Exception:
+            pass
+        return jsonify({'error': 'order_creation_failed', 'details': str(e)}), 500
 
 
 # ----- MANAGER: create user UI -----
@@ -616,9 +729,72 @@ def manager_users_page():
 def manager_users_delete(user_id):
     """Server-side deletion to avoid JS. Prevent deleting self or managers."""
     try:
+        logging.info(f"manager_users_delete called by user_id={session.get('user_id')} target_user_id={user_id}")
         if session.get('user_id') == user_id:
             flash('Cannot delete the currently logged-in user', 'warning')
             return redirect(url_for('manager_users_page'))
+        
+        db = get_db_connection()
+        cur = db.cursor(dictionary=True)
+        cur.execute("SELECT id, username, role FROM users WHERE id=%s", (user_id,))
+        user = cur.fetchone()
+        if not user:
+            cur.close(); db.close()
+            flash('User not found', 'warning')
+            return redirect(url_for('manager_users_page'))
+        
+        # If target is a manager, ensure we won't delete the last remaining manager
+        if user.get('role') == 'manager':
+            cur.execute("SELECT COUNT(*) as cnt FROM users WHERE role='manager'")
+            mgr_row = cur.fetchone()
+            try:
+                mgr_cnt = int(mgr_row.get('cnt', 0) if isinstance(mgr_row, dict) else (mgr_row[0] if mgr_row else 0))
+            except Exception:
+                mgr_cnt = 0
+        
+            if mgr_cnt <= 1:
+                cur.close(); db.close()
+                flash('Cannot delete the last remaining manager account', 'warning')
+                return redirect(url_for('manager_users_page'))
+        
+        try:
+            # First, nullify references from order_history.changed_by to avoid FK constraint
+            try:
+                cur.execute("UPDATE order_history SET changed_by = NULL WHERE changed_by = %s", (user_id,))
+            except Exception:
+                logging.debug('Could not nullify order_history.changed_by (may not exist or be nullable)')
+        
+            cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+            deleted = cur.rowcount
+            db.commit()
+        except mysql.connector.Error as db_err:
+            # If deletion still fails due to FK constraints, fall back to anonymize to preserve integrity
+            logging.warning(f"DB error deleting user {user_id}: {db_err}; attempting anonymize fallback")
+            try:
+                import time, uuid
+                from werkzeug.security import generate_password_hash
+                new_username = f"deleted_user_{user_id}_{int(time.time())}"
+                new_pw = generate_password_hash(uuid.uuid4().hex)
+                cur.execute("UPDATE users SET username=%s, role=%s, password_hash=%s WHERE id=%s",
+                            (new_username, 'disabled', new_pw, user_id))
+                db.commit()
+                cur.close(); db.close()
+                flash('User could not be deleted due to related records; account anonymized and disabled', 'warning')
+                return redirect(url_for('manager_users_page'))
+            except Exception:
+                logging.error(f"Anonymize fallback failed for user {user_id}: {traceback.format_exc()}")
+                cur.close(); db.close()
+                flash('Failed to delete user due to database constraints', 'danger')
+                return redirect(url_for('manager_users_page'))
+        
+        cur.close(); db.close()
+        logging.info(f"manager_users_delete deleted rows={deleted} for user_id={user_id}")
+        flash(f"Deleted user {user.get('username')}", 'success')
+        return redirect(url_for('manager_users_page'))
+    except Exception:
+        logging.error('Failed to delete user:\n' + traceback.format_exc())
+        flash('Failed to delete user', 'danger')
+        return redirect(url_for('manager_users_page'))
 
         db = get_db_connection()
         cur = db.cursor(dictionary=True)
@@ -628,14 +804,53 @@ def manager_users_delete(user_id):
             cur.close(); db.close()
             flash('User not found', 'warning')
             return redirect(url_for('manager_users_page'))
-        if user.get('role') == 'manager':
-            cur.close(); db.close()
-            flash('Cannot delete another manager', 'warning')
-            return redirect(url_for('manager_users_page'))
 
-        cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
-        db.commit()
+        # If target is a manager, ensure we won't delete the last remaining manager
+        if user.get('role') == 'manager':
+            cur.execute("SELECT COUNT(*) as cnt FROM users WHERE role='manager'")
+            mgr_row = cur.fetchone()
+            try:
+                mgr_cnt = int(mgr_row.get('cnt', 0) if isinstance(mgr_row, dict) else (mgr_row[0] if mgr_row else 0))
+            except Exception:
+                mgr_cnt = 0
+
+            if mgr_cnt <= 1:
+                cur.close(); db.close()
+                flash('Cannot delete the last remaining manager account', 'warning')
+                return redirect(url_for('manager_users_page'))
+
+        try:
+            # Attempt to cleanup all FK references to users.id (nullify or delete dependents), then delete user
+            try:
+                _cleanup_user_references(cur, db, user_id)
+            except Exception:
+                logging.debug('FK cleanup failed: ' + traceback.format_exc())
+
+            cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+            deleted = cur.rowcount
+            db.commit()
+        except mysql.connector.Error as db_err:
+            # If deletion still fails due to FK constraints, fall back to anonymize to preserve integrity
+            logging.warning(f"DB error deleting user {user_id}: {db_err}; attempting anonymize fallback")
+            try:
+                import time, uuid
+                from werkzeug.security import generate_password_hash
+                new_username = f"deleted_user_{user_id}_{int(time.time())}"
+                new_pw = generate_password_hash(uuid.uuid4().hex)
+                cur.execute("UPDATE users SET username=%s, role=%s, password_hash=%s WHERE id=%s",
+                            (new_username, 'disabled', new_pw, user_id))
+                db.commit()
+                cur.close(); db.close()
+                flash('User could not be deleted due to related records; account anonymized and disabled', 'warning')
+                return redirect(url_for('manager_users_page'))
+            except Exception:
+                logging.error(f"Anonymize fallback failed for user {user_id}: {traceback.format_exc()}")
+                cur.close(); db.close()
+                flash('Failed to delete user due to database constraints', 'danger')
+                return redirect(url_for('manager_users_page'))
+
         cur.close(); db.close()
+        logging.info(f"manager_users_delete deleted rows={deleted} for user_id={user_id}")
         flash(f"Deleted user {user.get('username')}", 'success')
         return redirect(url_for('manager_users_page'))
     except Exception:
@@ -650,6 +865,7 @@ def manager_users_delete(user_id):
 def api_manager_users_delete(user_id):
     """Delete a user from the users table. Prevent deleting self and other managers."""
     try:
+        logging.info(f"api_manager_users_delete called by user_id={session.get('user_id')} target_user_id={user_id} from {request.remote_addr}")
         # Prevent deleting self
         if session.get('user_id') == user_id:
             return jsonify({'error': 'cannot_delete_self'}), 400
@@ -658,29 +874,109 @@ def api_manager_users_delete(user_id):
         cur = db.cursor(dictionary=True)
         cur.execute("SELECT id, username, role FROM users WHERE id=%s", (user_id,))
         user = cur.fetchone()
+        logging.info(f"api_manager_users_delete fetched user: {user}")
         if not user:
             cur.close()
             db.close()
             return jsonify({'error': 'not_found'}), 404
 
-        # Prevent deleting another manager (keep at least managers safe)
+        # If deleting a manager, ensure we don't delete the last manager
         if user.get('role') == 'manager':
-            cur.close()
-            db.close()
-            return jsonify({'error': 'cannot_delete_manager'}), 403
+            cur.execute("SELECT COUNT(*) as cnt FROM users WHERE role='manager'")
+            mgr_cnt = cur.fetchone().get('cnt', 0)
+            if mgr_cnt <= 1:
+                cur.close(); db.close()
+                return jsonify({'error': 'cannot_delete_last_manager'}), 400
 
-        cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
-        db.commit()
-        cur.close()
-        db.close()
-        logging.info(f"Manager {session.get('username')} deleted user {user.get('username')} (id={user_id})")
-        return jsonify({'status': 'deleted'}), 200
+        try:
+            # Attempt to cleanup FK references (nullify or delete dependents) before deleting user
+            try:
+                _cleanup_user_references(cur, db, user_id)
+            except Exception:
+                logging.debug('FK cleanup failed: ' + traceback.format_exc())
+
+            cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+            deleted = cur.rowcount
+            db.commit()
+            cur.close(); db.close()
+            logging.info(f"Manager {session.get('username')} deleted user {user.get('username')} (id={user_id}), rows_deleted={deleted}")
+            return jsonify({'status': 'deleted', 'rows_deleted': deleted}), 200
+        except mysql.connector.Error as db_err:
+            logging.warning(f"DB error deleting user {user_id}: {db_err}; attempting anonymize fallback")
+            try:
+                import time, uuid
+                from werkzeug.security import generate_password_hash
+                new_username = f"deleted_user_{user_id}_{int(time.time())}"
+                new_pw = generate_password_hash(uuid.uuid4().hex)
+                cur.execute("UPDATE users SET username=%s, role=%s, password_hash=%s WHERE id=%s",
+                            (new_username, 'disabled', new_pw, user_id))
+                db.commit()
+                cur.close(); db.close()
+                logging.info(f"User {user_id} anonymized/disabled due to FK constraints")
+                return jsonify({'status': 'anonymized', 'id': user_id}), 200
+            except Exception:
+                logging.error(f"Anonymize fallback failed for user {user_id}: {traceback.format_exc()}")
+                cur.close(); db.close()
+                return jsonify({'error': 'cannot_delete'}), 500
     except Exception:
         logging.error('Failed to delete user:\n' + traceback.format_exc())
         return jsonify({'error': 'exception'}), 500
 
 
 # ----- MANAGER: Orders export and clear endpoints -----
+@app.route('/manager/delete_self', methods=['POST'])
+@login_required
+@role_required('manager')
+def manager_delete_self():
+    """Allow a logged-in manager to delete their own account after confirming password.
+    This will remove the user row, clear the session and redirect to the public index.
+    """
+    logging.info(f"manager_delete_self invoked by session user_id={session.get('user_id')} (type={type(session.get('user_id'))}) from {request.remote_addr}")
+    password = (request.form.get('password') or '').strip()
+    if not password:
+        flash('Password required to confirm account deletion', 'danger')
+        return redirect(url_for('dashboard', role='manager'))
+
+    try:
+        db = get_db_connection()
+        cur = db.cursor(dictionary=True)
+        cur.execute("SELECT id, username, password_hash FROM users WHERE id=%s", (session.get('user_id'),))
+        user = cur.fetchone()
+        logging.info(f"manager_delete_self fetched user from DB: {user}")
+        if not user:
+            cur.close(); db.close()
+            flash('User not found', 'warning')
+            return redirect(url_for('dashboard', role='manager'))
+
+        if not check_password_hash(user.get('password_hash', ''), password):
+            cur.close(); db.close()
+            flash('Invalid password', 'danger')
+            return redirect(url_for('dashboard', role='manager'))
+
+        # Attempt to cleanup dependent FK references then proceed to delete
+        try:
+            _cleanup_user_references(cur, db, user['id'])
+        except Exception:
+            logging.debug('FK cleanup failed during self-delete: ' + traceback.format_exc())
+
+        # Proceed to delete
+        cur.execute("DELETE FROM users WHERE id=%s", (user['id'],))
+        deleted_rows = cur.rowcount
+        db.commit()
+        cur.close(); db.close()
+
+        logging.info(f"Manager {user.get('username')} (id={user.get('id')}) deletion attempted, rows_deleted={deleted_rows}")
+        session.clear()
+        # If this was an AJAX request (fetch with X-Requested-With), respond with JSON
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'status': 'deleted', 'rows_deleted': deleted_rows}), 200
+
+        flash('Your account has been removed', 'success')
+        return redirect(url_for('index'))
+    except Exception:
+        logging.error('Failed to delete manager self account:\n' + traceback.format_exc())
+        flash('Failed to delete account', 'danger')
+        return redirect(url_for('dashboard', role='manager'))
 @app.route('/api/manager/orders/export', methods=['GET'])
 @login_required
 @role_required('manager')
@@ -776,6 +1072,57 @@ def api_manager_orders_export():
 def _menu_json_path():
     return os.path.join(app.root_path, 'data', 'menu.json')
 
+
+def _seed_item_from_menu(item_id, cur, db):
+    """If an authored menu.json contains an item with the given id, insert it
+    into the `items` table so orders referencing authored IDs work.
+    Returns True if an insert happened, False otherwise.
+    """
+    try:
+        p = _menu_json_path()
+        if not os.path.exists(p):
+            return False
+        with open(p, 'r', encoding='utf-8') as f:
+            menu = json.load(f)
+
+        # Search for matching id in menu categories
+        for cat in menu.get('categories', []):
+            for it in cat.get('items', []):
+                try:
+                    mid = int(it.get('id'))
+                except Exception:
+                    mid = None
+                if mid == int(item_id):
+                    # Insert into items table if not already present
+                    name = it.get('name') or f'Item {item_id}'
+                    price = float(it.get('price') or 0.0)
+                    category = cat.get('label') or cat.get('id')
+                    description = it.get('description') or None
+                    image = it.get('image') or None
+                    veg = 1 if it.get('veg', True) else 0
+                    tags = ','.join(it.get('tags', [])) if isinstance(it.get('tags', []), list) else (it.get('tags') or None)
+                    try:
+                        cur.execute("SELECT id FROM items WHERE id=%s", (mid,))
+                        if cur.fetchone():
+                            return True
+                        cur.execute(
+                            "INSERT INTO items (id, name, price, category, description, image, tags, veg) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                            (mid, name, price, category, description, image, tags, veg)
+                        )
+                        db.commit()
+                        return True
+                    except Exception:
+                        logging.debug('Failed to seed item from menu: ' + traceback.format_exc())
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
+                        return False
+        return False
+    except Exception:
+        logging.debug('Seed-from-menu failed: ' + traceback.format_exc())
+        return False
+
 def _load_menu():
     p = _menu_json_path()
     if not os.path.exists(p):
@@ -808,7 +1155,13 @@ def _allowed_image(filename):
 @role_required('manager')
 def api_manager_menu_get():
     """Return the authored menu JSON for manager UI."""
+    logging.info(f"api_manager_menu_get invoked by user_id={session.get('user_id')} from {request.remote_addr}")
     menu = _load_menu()
+    try:
+        cats = len(menu.get('categories', []))
+    except Exception:
+        cats = 0
+    logging.info(f"api_manager_menu_get returning menu with {cats} categories")
     return jsonify(menu)
 
 
@@ -979,6 +1332,31 @@ if DEBUG:
         db.close()
         return "created", 201
 
+    @app.route('/debug/session', methods=['GET'])
+    def debug_session():
+        """Debug endpoint (debug-mode only) to return current session info."""
+        _require_debug()
+        try:
+            return jsonify({
+                'session': {k: session.get(k) for k in ['user_id', 'username', 'role']},
+                'cookies': dict(request.cookies),
+                'remote_addr': request.remote_addr
+            })
+        except Exception:
+            logging.error('debug_session failed:\n' + traceback.format_exc())
+            return jsonify({'error': 'exception'}), 500
+
+    @app.route('/debug/menu', methods=['GET'])
+    def debug_menu():
+        """Debug endpoint (debug-mode only) to return the authored menu JSON without auth."""
+        _require_debug()
+        try:
+            menu = _load_menu()
+            return jsonify(menu)
+        except Exception:
+            logging.error('debug_menu failed:\n' + traceback.format_exc())
+            return jsonify({'error': 'exception'}), 500
+
 # ----- ERROR HANDLING -----
 @app.errorhandler(404)
 def page_not_found(e):
@@ -1061,25 +1439,32 @@ def create_order_api():
         db = get_db_connection()
         cur = db.cursor(dictionary=True)
 
-        # Fetch all item prices first (before any inserts)
+        # Fetch and validate all item prices first (before any inserts)
         item_prices = {}
         for item in items:
-            item_id = int(item['item_id'])
-            price_cur = db.cursor(dictionary=True)
-            price_cur.execute("SELECT price FROM items WHERE id=%s", (item_id,))
-            price_row = price_cur.fetchone()
-            price_cur.close()
-            item_prices[item_id] = float(price_row['price']) if price_row else 0.0
+            try:
+                item_id = int(item['item_id'])
+            except Exception:
+                cur.close(); db.close()
+                return jsonify({'error': 'invalid_item_id', 'item': item.get('item_id')}), 400
 
-        # Insert order
-        cur.execute("""
-            INSERT INTO orders (customer_name, type, total_amount, status, priority, customer_notes, order_time)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (customer_name, order_type, total_amount, 'queued', priority, customer_notes, datetime.now()))
-        
-        order_id = cur.lastrowid
+            cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
+            price_row = cur.fetchone()
+            if not price_row:
+                # Try to seed the item from authored menu.json before failing
+                try:
+                    seeded = _seed_item_from_menu(item_id, cur, db)
+                except Exception:
+                    seeded = False
+                if seeded:
+                    cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
+                    price_row = cur.fetchone()
+            if not price_row:
+                cur.close(); db.close()
+                return jsonify({'error': 'item_not_found', 'item_id': item_id}), 400
+            item_prices[item_id] = float(price_row.get('price') or 0.0)
 
-        # Try inserting order with extended columns (if migrations applied)
+        # Insert order (try extended columns, fallback to minimal if needed)
         try:
             cur.execute("""
                 INSERT INTO orders (customer_name, type, total_amount, status, priority, customer_notes, order_time)
@@ -1087,7 +1472,7 @@ def create_order_api():
             """, (customer_name, order_type, total_amount, 'queued', priority, customer_notes, datetime.now()))
             order_id = cur.lastrowid
 
-            # Insert order items (with modifiers / item_status if available)
+            # Insert order items (attempt extended insert, fallback if columns missing)
             for item in items:
                 modifiers = json.dumps(item.get('modifiers', []))
                 item_id = int(item['item_id'])
@@ -1099,27 +1484,23 @@ def create_order_api():
                         VALUES (%s, %s, %s, %s, %s, %s)
                     """, (order_id, item_id, qty, item_price, modifiers, 'queued'))
                 except mysql.connector.Error:
-                    # Fallback if order_items doesn't have modifiers/item_status/price columns
-                    cur.execute("""
-                        INSERT INTO order_items (order_id, item_id, qty, price)
-                        VALUES (%s, %s, %s, %s)
-                    """, (order_id, item_id, qty, item_price))
+                    cur.execute("INSERT INTO order_items (order_id, item_id, qty, price) VALUES (%s,%s,%s,%s)",
+                                (order_id, item_id, qty, item_price))
 
         except mysql.connector.Error as ex:
             # If extended columns do not exist yet, fall back to minimal schema inserts
-            logging.warning(f"Extended order insert failed, falling back to minimal schema: {ex}")
-            # Try minimal insert into orders (order_time, total_amount, cashier, status)
+            logging.warning(f"Order insert failed, falling back to minimal schema: {ex}")
             cur.execute("INSERT INTO orders (order_time, total_amount, cashier, status) VALUES (%s,%s,%s,%s)",
                         (datetime.now(), total_amount, session.get('username', 'walkin'), 'queued'))
             order_id = cur.lastrowid
-
-            # Insert order items with minimal columns (order_id, item_id, qty, price)
             for item in items:
                 item_id = int(item['item_id'])
                 qty = int(item.get('qty', 1))
                 item_price = item_prices.get(item_id, 0.0)
                 cur.execute("INSERT INTO order_items (order_id, item_id, qty, price) VALUES (%s,%s,%s,%s)",
                             (order_id, item_id, qty, item_price))
+
+        db.commit()
         emit_order_update(order_id, {
             'customer_name': customer_name,
             'items_count': len(items),
@@ -1127,7 +1508,8 @@ def create_order_api():
             'type': order_type,
             'status': 'queued'
         }, 'new_order')
-        
+
+        cur.close(); db.close()
         return jsonify({
             "order_id": order_id,
             "status": "queued",
@@ -1161,17 +1543,30 @@ def create_public_order_api():
         db = get_db_connection()
         cur = db.cursor(dictionary=True)
 
-        # Fetch item prices
+        # Fetch and validate item prices
         item_prices = {}
         for item in items:
-            item_id = int(item['item_id'])
-            price_cur = db.cursor(dictionary=True)
-            price_cur.execute("SELECT price FROM items WHERE id=%s", (item_id,))
-            price_row = price_cur.fetchone()
-            price_cur.close()
-            item_prices[item_id] = float(price_row['price']) if price_row else 0.0
+            try:
+                item_id = int(item['item_id'])
+            except Exception:
+                cur.close(); db.close()
+                return jsonify({'error': 'invalid_item_id', 'item': item.get('item_id')}), 400
 
-        # Try extended insert first
+            cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
+            price_row = cur.fetchone()
+            if not price_row:
+                try:
+                    seeded = _seed_item_from_menu(item_id, cur, db)
+                except Exception:
+                    seeded = False
+                if seeded:
+                    cur.execute("SELECT id, price FROM items WHERE id=%s", (item_id,))
+                    price_row = cur.fetchone()
+            if not price_row:
+                cur.close(); db.close()
+                return jsonify({'error': 'item_not_found', 'item_id': item_id}), 400
+            item_prices[item_id] = float(price_row.get('price') or 0.0)
+
         try:
             cur.execute("""
                 INSERT INTO orders (customer_name, type, total_amount, status, priority, customer_notes, order_time)
@@ -1195,7 +1590,6 @@ def create_public_order_api():
 
         except mysql.connector.Error as ex:
             logging.warning(f"Extended public order insert failed, falling back: {ex}")
-            # minimal fallback
             cur.execute("INSERT INTO orders (order_time, total_amount, cashier, status) VALUES (%s,%s,%s,%s)",
                         (datetime.now(), total_amount, 'public', 'queued'))
             order_id = cur.lastrowid
@@ -1554,9 +1948,6 @@ def emit_kpi_update(dashboard_type, kpi_data):
     }, room=dashboard_type)
 
 
-import json
-
-
 def _require_debug():
     """Helper to restrict admin diagnostics to debug mode only."""
     if not app.debug:
@@ -1591,6 +1982,46 @@ def get_table_schema(table_names):
             'default': coldef
         })
     return result
+
+
+def _cleanup_user_references(cur, db, user_id):
+    """Attempt to remove or nullify foreign-key references that point to users(id).
+    Strategy:
+      - Query information_schema for any columns referencing users(id).
+      - If the child column is nullable, SET it to NULL for rows matching the user_id.
+      - If the child column is NOT nullable, DELETE the dependent rows.
+    This is aggressive (may delete historical rows) but enables hard deletion of the
+    user row when requested. Each operation is best-effort and failures are logged.
+    """
+    try:
+        # Find all FK referencing users(id) in this database
+        cur.execute("""
+            SELECT k.TABLE_NAME as tbl, k.COLUMN_NAME as col, c.IS_NULLABLE as is_nullable
+            FROM information_schema.KEY_COLUMN_USAGE k
+            JOIN information_schema.COLUMNS c
+              ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME AND c.COLUMN_NAME = k.COLUMN_NAME
+            WHERE k.REFERENCED_TABLE_SCHEMA = %s
+              AND k.REFERENCED_TABLE_NAME = 'users'
+              AND k.REFERENCED_COLUMN_NAME = 'id'
+              AND k.TABLE_SCHEMA = %s
+        """, (DB_NAME, DB_NAME))
+        refs = cur.fetchall()
+        for r in refs:
+            try:
+                tbl = r['tbl'] if isinstance(r, dict) else r[0]
+                col = r['col'] if isinstance(r, dict) else r[1]
+                is_nullable = (r['is_nullable'] if isinstance(r, dict) else r[2]) or 'NO'
+                if str(is_nullable).upper() == 'YES':
+                    logging.info(f"Nullifying {tbl}.{col} for user {user_id}")
+                    cur.execute(f"UPDATE `{tbl}` SET `{col}` = NULL WHERE `{col}` = %s", (user_id,))
+                else:
+                    logging.info(f"Deleting dependent rows from {tbl} where {col}=%s", user_id)
+                    cur.execute(f"DELETE FROM `{tbl}` WHERE `{col}` = %s", (user_id,))
+            except Exception:
+                logging.warning(f"Failed to cleanup reference on {r}: {traceback.format_exc()}")
+        # Note: caller should commit when appropriate
+    except Exception:
+        logging.debug('Could not enumerate or cleanup FK references: ' + traceback.format_exc())
 
 
 @app.route('/admin/db_schema', methods=['GET'])
